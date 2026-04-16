@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import QFileDialog,QLineEdit, QPushButton, QApplication,QVB
 from openpyxl import Workbook
 
 import openpyxl
-from tablemodel import CustomTableModel,CustomProxyModel
+from tablemodel import CustomTableModel,CustomProxyModel,ValidationProxyModel,FilterHeaderView,ColumnFilterDialog
 from queue import Queue
 
 import json
@@ -219,6 +219,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mutex = QMutex()
 
         self.data=[]
+        self._last_vrm_groups = []
 
         # Tighten layout margins and spacing in code (uic doesn't support these in .ui files)
         for name, margins, spacing in [
@@ -408,13 +409,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_export_vbox_cut.clicked.connect(self.export_vbox_cut_data)
         self.tableValidation=self.findChild(QtWidgets.QTableView,'tbl_validation')
 
+        # Install the filterable header once — survives model swaps
+        self._filter_header = FilterHeaderView(Qt.Horizontal, self.tableValidation)
+        self.tableValidation.setHorizontalHeader(self._filter_header)
+        self._filter_header.filter_clicked.connect(self._show_column_filter)
+        self._filter_header.setSectionsClickable(True)
+
         
-        self.line_plate = self.findChild(QtWidgets.QLineEdit,'line_plate')
-        self.line_hash = self.findChild(QtWidgets.QLineEdit,'line_hash')
+
 
         #self.dateValidation.setDateTime(QtCore.QDateTime.currentDateTime())
 
-        self.pbAverageSpeedValidation = self.findChild(QtWidgets.QProgressBar,'pb_link_validation')
+        self.pbAverageSpeedValidation = None  # replaced by progress dialog
     
         self.btn_import_config_file = self.findChild(QtWidgets.QPushButton,'btn_import_config_file')
         self.btn_import_config_file.clicked.connect(self.btnImportConfigFilePressed)
@@ -564,28 +570,53 @@ class MainWindow(QtWidgets.QMainWindow):
         self.safeZoneConfig.importConfig(xmlFilename)
 
     def btn_file_checkPressed(self):
-        if str(self.line_plate.text()) != "" or str(self.line_hash.text()) != "":
-            GPSFilenames, check = QFileDialog.getOpenFileNames(None,"Select Vbox/OxTS GPS File(s):","","All Files (*.*);;Vbox Files (*.vbo);;OxTS Files (*.csv)",)
-            if not check: return
-            if any("vbo" in s.lower() for s in GPSFilenames) and any("csv" in s.lower() for s in GPSFilenames):
-                self.showErrorMessagebox("Incorrect selection","Please select only Vbox or only OxTS csv files.")
-                return
-            OBODataFilenames, check = QFileDialog.getOpenFileNames(None,"Select OBO Data File","","OBO Files (*.txt *.xlsx);;Text Files (*.txt);;Excel Files (*.xlsx);;All Files (*.*)",)
-            if not check: return
-            self._wizard = None
-            self._startComparison(GPSFilenames, OBODataFilenames, self.line_plate.text(), self.line_hash.text())
-        else:
-            self.showErrorMessagebox("Invalid plate","Please enter a plate")
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("Quick Compare — Vehicle ID")
+        dlg.setMinimumWidth(320)
+        form = QtWidgets.QFormLayout(dlg)
+        form.setContentsMargins(16, 16, 16, 8)
+        form.setSpacing(8)
+        line_vrm  = QtWidgets.QLineEdit()
+        line_vrm.setPlaceholderText("e.g. ANZ6427")
+        line_hash = QtWidgets.QLineEdit()
+        line_hash.setPlaceholderText("Optional")
+        form.addRow("Plate / VRM:", line_vrm)
+        form.addRow("Plate Hash:", line_hash)
+        btn_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(dlg.accept)
+        btn_box.rejected.connect(dlg.reject)
+        form.addRow(btn_box)
+
+        if dlg.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        vrm        = line_vrm.text().strip()
+        plate_hash = line_hash.text().strip()
+        if not vrm and not plate_hash:
+            self.showErrorMessagebox("Missing Details", "Please enter a Plate or Hash.")
+            return
+
+        GPSFilenames, check = QFileDialog.getOpenFileNames(self, "Select GPS File(s)", "", "All Files (*.*);;Vbox Files (*.vbo);;OxTS Files (*.csv)")
+        if not check: return
+        if any("vbo" in s.lower() for s in GPSFilenames) and any("csv" in s.lower() for s in GPSFilenames):
+            self.showErrorMessagebox("Incorrect selection", "Please select only Vbox or only OxTS csv files.")
+            return
+
+        OBODataFilenames, check = QFileDialog.getOpenFileNames(self, "Select OBO Data File", "", "OBO Files (*.txt *.xlsx);;Text Files (*.txt);;Excel Files (*.xlsx);;All Files (*.*)")
+        if not check: return
+
+        self._wizard = None
+        vrm_groups = [{"plate": vrm, "plate_hash": plate_hash, "gps_files": GPSFilenames}]
+        self._startComparison(OBODataFilenames, vrm_groups)
 
     def btn_wizardPressed(self):
-        self._wizard = ValidationWizard(self.line_plate.text(), self.line_hash.text(), self)
+        self._wizard = ValidationWizard(self)
         self._wizard.comparisonRequested.connect(self._onWizardComparisonRequested)
+        if self._last_vrm_groups:
+            self._wizard.page(self._wizard.VRM_PAGE).set_previous_state(self._last_vrm_groups)
         self._wizard.show()
 
     def _onWizardComparisonRequested(self):
-        self.line_plate.setText(self._wizard.get_plate())
-        self.line_hash.setText(self._wizard.get_plate_hash())
-        self._startComparison(self._wizard.get_gps_files(), self._wizard.get_obo_files(), self._wizard.get_plate(), self._wizard.get_plate_hash())
+        self._startComparison(self._wizard.get_obo_files(), self._wizard.get_vrm_groups())
 
     def _onWizardProgress(self, str_val):
         if self._wizard is None:
@@ -596,14 +627,25 @@ class MainWindow(QtWidgets.QMainWindow):
         page.progress_bar.setValue(progress)
         page.lbl_status.setText(message)
 
-    def _startComparison(self, GPSFilenames, OBODataFilenames, plate, plate_hash):
+    def _startComparison(self, OBODataFilenames, vrm_groups):
         self.btn_save_kml.setEnabled(False)
         self.btn_export_validation_data.setEnabled(False)
         self.btn_export_vbox_cut.setEnabled(False)
         self.btn_file_check.setEnabled(False)
         self.btn_wizard.setEnabled(False)
         self.tableValidation.setModel(None)
-        self.AverageSpeedValidationManualCheckCompare=AverageSpeedLinkValidationManualComparison(GPSFilenames,OBODataFilenames,self.commissioningConfig, plate, plate_hash)
+
+        self._progress_dialog = None
+        if not (hasattr(self, '_wizard') and self._wizard is not None):
+            self._progress_dialog = QtWidgets.QProgressDialog("Starting comparison...", None, 0, 100, self)
+            self._progress_dialog.setWindowTitle("Running Comparison")
+            self._progress_dialog.setWindowModality(QtCore.Qt.WindowModal)
+            self._progress_dialog.setMinimumWidth(420)
+            self._progress_dialog.setCancelButton(None)
+            self._progress_dialog.setMinimumDuration(0)
+            self._progress_dialog.setValue(0)
+            self._progress_dialog.show()
+        self.AverageSpeedValidationManualCheckCompare=AverageSpeedLinkValidationManualComparison(OBODataFilenames, self.commissioningConfig, vrm_groups)
         self.AverageSpeedValidationManualCheckCompare.updateAverageSpeedValidationPB.connect(self.updateAverageSpeedValidationPB)
         self.AverageSpeedValidationManualCheckCompare.updateValidationTable.connect(self.updateValidationTable)
         self.AverageSpeedValidationManualCheckCompare.validationThreadFinished.connect(self.validationThreadFinished)
@@ -681,15 +723,13 @@ class MainWindow(QtWidgets.QMainWindow):
         if len(self.linkValidationData.validationResultData):
 
             self.model = CustomTableModel(self.linkValidationData.validationResultData,self.validation_headers)
-            self.proxy_model = QSortFilterProxyModel()
-            self.proxy_model.setFilterKeyColumn(-1) # Search all columns.
+            self.proxy_model = ValidationProxyModel()
             self.proxy_model.setSourceModel(self.model)
             self.proxy_model.sort(0, Qt.AscendingOrder)
             self.tableValidation.setModel(self.proxy_model)
-            tableValidationHeader=self.tableValidation.horizontalHeader()
-            tableValidationHeader.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
-            tableValidationHeader.resizeSections(QtWidgets.QHeaderView.ResizeToContents)
-            tableValidationHeader.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
+            self._filter_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+            self._filter_header.resizeSections(QtWidgets.QHeaderView.ResizeToContents)
+            self._filter_header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
             self.recolourValidationTable()
 
     def setValidationControlsEnabled(self, enabled):
@@ -742,14 +782,46 @@ class MainWindow(QtWidgets.QMainWindow):
             except (ValueError, TypeError, IndexError):
                 pass
 
+    def _show_column_filter_at_pos(self, pos):
+        header = self.tableValidation.horizontalHeader()
+        col = header.logicalIndexAt(pos)
+        if col >= 0:
+            self._show_column_filter(col)
+
+    def _show_column_filter(self, col):
+        if not hasattr(self, 'model') or self.model is None:
+            return
+        unique_vals = set()
+        for row in self.model._data:
+            try:
+                unique_vals.add(row[col])
+            except IndexError:
+                pass
+        header_name = self.validation_headers[col] if col < len(self.validation_headers) else str(col)
+        dlg = ColumnFilterDialog(col, header_name, self.proxy_model, unique_vals, self)
+        dlg.move(QCursor.pos())
+        dlg.exec_()
+        # Update header text and funnel icons
+        active_indices = set()
+        for i, name in enumerate(self.validation_headers):
+            if self.proxy_model.has_filter(i):
+                self.model.setHeaderData(i, Qt.Horizontal, f"{name} ▼")
+                active_indices.add(i)
+            else:
+                self.model.setHeaderData(i, Qt.Horizontal, name)
+        self._filter_header.set_filtered_columns(active_indices)
+
     def updateAverageSpeedValidationPB(self, str_val):
-        if "progress" in str_val:
-            self.pbAverageSpeedValidation.setValue(str_val["progress"])
-        self.pbAverageSpeedValidation.setFormat(str_val['message'])
-        self.pbAverageSpeedValidation.setAlignment(QtCore.Qt.AlignCenter)
+        if hasattr(self, '_progress_dialog') and self._progress_dialog is not None:
+            if "progress" in str_val:
+                self._progress_dialog.setValue(str_val["progress"])
+            self._progress_dialog.setLabelText(str_val["message"])
 
  
     def validationThreadFinished(self, result):
+        if hasattr(self, '_progress_dialog') and self._progress_dialog is not None:
+            self._progress_dialog.close()
+            self._progress_dialog = None
         self.btn_file_check.setEnabled(True)
         self.btn_wizard.setEnabled(True)
         if result['Result']:
@@ -788,6 +860,7 @@ class MainWindow(QtWidgets.QMainWindow):
                             passed += 1
                     failed = total - passed
                     self._wizard.show_results(total, passed, failed, self.commissioningConfig)
+                    self._last_vrm_groups = self._wizard.get_vrm_groups()
                     self._wizard.mark_complete()
                     self._wizard.show()
 

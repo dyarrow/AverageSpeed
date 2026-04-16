@@ -69,24 +69,13 @@
             <property name="title"><string>Compare</string></property>
             <property name="flat"><bool>false</bool></property>
             <layout class="QHBoxLayout" name="hl_compare">
-             <item><widget class="QPushButton" name="btn_file_check"><property name="text"><string>Quick Compare</string></property><property name="toolTip"><string>Select GPS and OBO files directly and start comparison</string></property></widget></item>
+             <item><widget class="QPushButton" name="btn_file_check"><property name="text"><string>Quick Compare</string></property><property name="toolTip"><string>Single vehicle quick comparison without the wizard</string></property></widget></item>
              <item><widget class="QPushButton" name="btn_wizard"><property name="text"><string>Wizard</string></property><property name="toolTip"><string>Step-by-step comparison wizard</string></property></widget></item>
             </layout>
            </widget>
           </item>
 
-          <!-- Vehicle ID group -->
-          <item>
-           <widget class="QGroupBox" name="grp_vehicle">
-            <property name="title"><string>Vehicle</string></property>
-            <layout class="QHBoxLayout" name="hl_vehicle">
-             <item><widget class="QLabel" name="label"><property name="text"><string>Plate:</string></property></widget></item>
-             <item><widget class="QLineEdit" name="line_plate"><property name="minimumWidth"><number>80</number></property></widget></item>
-             <item><widget class="QLabel" name="label_2"><property name="text"><string>Hash:</string></property></widget></item>
-             <item><widget class="QLineEdit" name="line_hash"><property name="minimumWidth"><number>80</number></property></widget></item>
-            </layout>
-           </widget>
-          </item>
+
 
           <!-- Export group -->
           <item>
@@ -140,13 +129,6 @@
           <attribute name="verticalHeaderVisible"><bool>false</bool></attribute>
           <attribute name="verticalHeaderMinimumSectionSize"><number>20</number></attribute>
           <attribute name="verticalHeaderDefaultSectionSize"><number>20</number></attribute>
-         </widget>
-        </item>
-
-        <!-- ── Progress bar ── -->
-        <item>
-         <widget class="QProgressBar" name="pb_link_validation">
-          <property name="value"><number>0</number></property>
          </widget>
         </item>
 

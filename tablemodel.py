@@ -294,3 +294,179 @@ class CustomTreeProxyModel(QSortFilterProxyModel):
         return False """
         return True
         
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Column filter support for the validation table
+# ─────────────────────────────────────────────────────────────────────────────
+
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
+                             QPushButton, QLabel, QDialogButtonBox, QCheckBox,
+                             QListWidget, QListWidgetItem, QAbstractItemView,
+                             QHeaderView)
+from PyQt5 import QtWidgets
+from PyQt5.QtGui import QPainter, QIcon, QPixmap, QColor, QPen, QPolygon
+from PyQt5.QtCore import QRect, QPoint, QSize
+
+
+class ValidationProxyModel(QSortFilterProxyModel):
+    """Multi-column filter proxy for the validation results table."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._filters = {}   # {col_index: str}
+
+    def set_filter(self, col, text):
+        if text:
+            self._filters[col] = text.lower()
+        elif col in self._filters:
+            del self._filters[col]
+        self.invalidateFilter()
+
+    def clear_filter(self, col):
+        self.set_filter(col, "")
+
+    def clear_all_filters(self):
+        self._filters.clear()
+        self.invalidateFilter()
+
+    def get_filter(self, col):
+        return self._filters.get(col, "")
+
+    def has_filter(self, col):
+        return col in self._filters and bool(self._filters[col])
+
+    def filterAcceptsRow(self, source_row, source_parent):
+        for col, text in self._filters.items():
+            idx = self.sourceModel().index(source_row, col, source_parent)
+            cell = str(self.sourceModel().data(idx) or "").lower()
+            if text not in cell:
+                return False
+        return True
+
+
+class ColumnFilterDialog(QDialog):
+    """Small dropdown-style dialog for filtering a single column."""
+
+    def __init__(self, col, header_name, proxy_model, unique_values, parent=None):
+        super().__init__(parent)
+        self.col = col
+        self.proxy = proxy_model
+        self.setWindowTitle(f"Filter — {header_name}")
+        self.setMinimumWidth(260)
+        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        # Search box
+        self.line_search = QLineEdit()
+        self.line_search.setPlaceholderText("Type to filter…")
+        self.line_search.setText(proxy_model.get_filter(col))
+        self.line_search.textChanged.connect(self._on_search_changed)
+        layout.addWidget(self.line_search)
+
+        # Unique value list
+        self.value_list = QListWidget()
+        self.value_list.setSelectionMode(QAbstractItemView.NoSelection)
+        self.value_list.setMaximumHeight(180)
+        self._all_values = sorted(set(str(v) for v in unique_values if v is not None))
+        self._populate_list(self._all_values)
+        self.value_list.itemClicked.connect(self._on_value_clicked)
+        layout.addWidget(self.value_list)
+
+        # Buttons
+        btn_layout = QHBoxLayout()
+        self.btn_clear = QPushButton("Clear Filter")
+        self.btn_clear.clicked.connect(self._clear)
+        self.btn_close = QPushButton("Close")
+        self.btn_close.clicked.connect(self.accept)
+        btn_layout.addWidget(self.btn_clear)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.btn_close)
+        layout.addLayout(btn_layout)
+
+        self.line_search.setFocus()
+
+    def _populate_list(self, values):
+        self.value_list.clear()
+        current = self.proxy.get_filter(self.col)
+        for v in values:
+            item = QListWidgetItem(v)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if v.lower() == current else Qt.Unchecked)
+            self.value_list.addItem(item)
+
+    def _on_search_changed(self, text):
+        self.proxy.set_filter(self.col, text)
+        # Filter the list display too
+        filtered = [v for v in self._all_values if text.lower() in v.lower()]
+        self._populate_list(filtered)
+
+    def _on_value_clicked(self, item):
+        # Clicking a value sets it as the exact filter
+        self.line_search.setText(item.text())
+
+    def _clear(self):
+        self.line_search.clear()
+        self.proxy.clear_filter(self.col)
+        self._populate_list(self._all_values)
+
+
+class FilterHeaderView(QHeaderView):
+    """
+    Paints a small funnel icon on the left of each section.
+    Clicking the funnel area emits filter_clicked instead of sorting.
+    Clicking elsewhere sorts as normal.
+    """
+    filter_clicked = QtCore.pyqtSignal(int)   # emits logical index
+
+    _ICON_W     = 8
+    _CLICK_ZONE = 12
+
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self._active_filters: set = set()
+        self.setSectionsClickable(True)
+        self.setHighlightSections(True)
+
+    def set_filtered_columns(self, indices: set):
+        self._active_filters = set(indices)
+        self.viewport().update()
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            logical = self.logicalIndexAt(e.pos())
+            if logical >= 0:
+                sec_x = self.sectionViewportPosition(logical)
+                if e.x() <= sec_x + self._CLICK_ZONE:
+                    self.filter_clicked.emit(logical)
+                    return
+        super().mousePressEvent(e)
+
+    def paintSection(self, painter: QPainter, rect, logical_index: int):
+        painter.save()
+        super().paintSection(painter, rect, logical_index)
+        painter.restore()
+        self._draw_funnel(painter, rect, logical_index)
+
+    def _draw_funnel(self, painter: QPainter, rect, logical_index: int):
+        active = logical_index in self._active_filters
+        ix = rect.left() + 3
+        iy = rect.top() + (rect.height() - 10) // 2
+
+        col = QColor("#0078d4") if active else QColor(160, 160, 160, 200)
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(col)
+
+        top = QPolygon([
+            QPoint(ix,                    iy),
+            QPoint(ix + self._ICON_W,     iy),
+            QPoint(ix + self._ICON_W - 2, iy + 3),
+            QPoint(ix + 2,                iy + 3),
+        ])
+        painter.drawPolygon(top)
+        painter.drawRect(ix + 3, iy + 3, 2, 4)
+        painter.restore()
