@@ -403,8 +403,7 @@ class linkValidation:
     def doComparison(self):
         currentProgress=int((self.UI.pbTotal-1/self.UI.pbTotal)*100)
         self.UI.updateAverageSpeedValidationPB.emit({"progress":currentProgress,"message":"Calculating Passages"})
-        f = open(f"{self.plate}_vbox_cut_data.csv","w")
-        f.write("PassageID,Sats,Time,Speed,Lat,Long\n")
+        self.validationData.vboxCutData = []
 
 
         for passage in self.validationData.oboData:   #For each OBO passage do a calculation from GPS data
@@ -423,9 +422,7 @@ class linkValidation:
                     totalGPSPoints+=1
 
 
-                    #TEMPORARY
-                    f.write(f"{passage['PassageID']},{gpsPoint['SatNumber']},{gpsPoint['Time']},{gpsPoint['Speed']},{gpsPoint['Lat']},{gpsPoint['Long']}\n")
-
+                    self.validationData.vboxCutData.append([passage['PassageID'], gpsPoint['SatNumber'], gpsPoint['Time'], gpsPoint['Speed'], gpsPoint['Lat'], gpsPoint['Long']])
                     vbox_cut_data.append(gpsPoint)
 
                 elif gpsPoint['Time'] >= passage['FromTime'] and gpsPoint['Time'] <= passage['ToTime'] and int(gpsPoint['SatNumber']) < MinSats:
