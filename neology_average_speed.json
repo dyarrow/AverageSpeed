@@ -1,0 +1,7 @@
+{
+    "AverageSpeed": {
+        "min_sats": "4",
+        "time_offset": "0",
+        "leap_seconds": "0"
+    }
+}
