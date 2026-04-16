@@ -34,11 +34,12 @@ class linkValidationData:
     def __init__(self):
         super().__init__()
         self.gpsFilenames = ""
-        self.ercuFilenames = ""
+        self.oboFilenames = ""
         self.gpsData = []
-        self.ercuData=[]
-        self.ercuRawDataFile=[]
+        self.oboData=[]
+        self.oboRawDataFile=[]
         self.validationResultData=[]
+        self.vboxCutData=[]
         self.instationIP=""
         self.username=""
         self.password=""
@@ -54,21 +55,20 @@ class AverageSpeedLinkValidationManualComparison(QtCore.QThread):
     validationThreadFinished = QtCore.pyqtSignal(dict)
     updateAverageSpeedValidationPB = QtCore.pyqtSignal(dict)
         
-    def __init__(self,GPSFilenames,ERCUDataFilenames,commissioningConfig, plate, plate_hash, save_path):
+    def __init__(self,GPSFilenames,OBODataFilenames,commissioningConfig, plate, plate_hash):
         super(QtCore.QThread,self).__init__()
         self.linkValData = linkValidationData()
         self.linkValData.gpsFilenames=GPSFilenames
-        self.linkValData.ercuFilenames=ERCUDataFilenames
-        self.pbTotal=len(GPSFilenames)+len(ERCUDataFilenames)+1
+        self.linkValData.oboFilenames=OBODataFilenames
+        self.pbTotal=len(GPSFilenames)+len(OBODataFilenames)+1
         self.linkValData.commissioningConfig=commissioningConfig
         self.plate=str(plate)
         self.plate_hash=str(plate_hash)
-        self.save_path=save_path
 
     def run(self):
         try:
             linkVal = linkValidation(self)
-            self.linkValData=linkVal.manualComparison(self.linkValData,self.plate, self.plate_hash, self.save_path)
+            self.linkValData=linkVal.manualComparison(self.linkValData,self.plate, self.plate_hash)
             self.updateValidationTable.emit(self.linkValData)
             self.validationThreadFinished.emit({"Result":True, "Title":"Validation Complete", "Text":"Manual validation comparison is complete."})
             self.updateAverageSpeedValidationPB.emit({"progress":100,"message":"Completed Successfully"})
@@ -104,26 +104,25 @@ class linkValidation:
         self.UI=UI
         self.pbProgress=0
 
-    def manualComparison(self,linkValData,plate, plate_hash, save_path):
-        #Do link validation comparison between GPS and ERCU files
+    def manualComparison(self,linkValData,plate, plate_hash):
+        #Do link validation comparison between GPS and OBO files
         self.validationData = linkValData
         self.plate=str(plate)
         self.plate_hash=str(plate_hash)
-        self.save_path=save_path
 
-        if self.validationData.gpsFilenames and self.validationData.ercuFilenames:
+        if self.validationData.gpsFilenames and self.validationData.oboFilenames:
             self.importGPSFiles()
-            self.importERCUFiles()
+            self.importOBOFiles()
             self.doComparison()
             return self.validationData
 
-    def ercuComparison(self,linkValData):
-        #Do link validation comparison between GPS and ERCU database
+    def oboComparison(self,linkValData):
+        #Do link validation comparison between GPS and OBO database
         self.validationData = linkValData
 
         if self.validationData.gpsFilenames:
             self.importGPSFiles()
-            self.getPassagesFromERCU()
+            self.getPassagesFromOBO()
             self.doComparison()
             return self.validationData
         
@@ -286,18 +285,18 @@ class linkValidation:
             lineNumber=lineNumber+1 """
         
 
-    def importERCUFiles(self):
-        #Import ERCU datafiles to a dict
-        self.UI.updateAverageSpeedValidationPB.emit({"message":"Importing ERCU File(s)"})
+    def importOBOFiles(self):
+        #Import OBO datafiles to a dict
+        self.UI.updateAverageSpeedValidationPB.emit({"message":"Importing OBO File(s)"})
 
-        for file in self.validationData.ercuFilenames:
-            self.importERCUFile(file)
+        for file in self.validationData.oboFilenames:
+            self.importOBOFile(file)
             self.pbProgress+=1
             currentProgress=int((self.pbProgress/self.UI.pbTotal)*100)
-            self.UI.updateAverageSpeedValidationPB.emit({"progress":currentProgress,"message":"Importing ERCU File(s)"})
+            self.UI.updateAverageSpeedValidationPB.emit({"progress":currentProgress,"message":"Importing OBO File(s)"})
         
 
-    def importERCUFile(self, file):
+    def importOBOFile(self, file):
         #Check if input file is WSDOT or SpeedSpike
         if file.endswith(".xls") == True or file.endswith(".xlsx") == True:
             #Process WSDOT excel file
@@ -322,10 +321,10 @@ class linkValidation:
             self.lp_number_col=headers.index(WSDOTInputData.LP_NUMBER)
             self.lp_hash_col=headers.index(WSDOTInputData.LP_HASH)
 
-            ercu_data=[list(elem) for elem in list_values[1:]]
+            obo_data=[list(elem) for elem in list_values[1:]]
             
             passage_id=1
-            for row in ercu_data:
+            for row in obo_data:
                 if row[0] != None:
                     #Check if passage is a VRM we are interested in
                     if str(row[self.lp_number_col]) == str(self.plate) or str(row[self.lp_hash_col]) == str(self.plate_hash):
@@ -361,24 +360,24 @@ class linkValidation:
                         diff=(sec_speed-pri_speed)*100/pri_speed
 
 
-                        self.validationData.ercuData.append({"PassageID":vrm + "_" + str(passage_id), "DateTime":row[self.entry_pri_time_col],"VRM":vrm,"Speed":row[self.pri_speed_col],"SecSpeed":sec_speed,"PriSecSpeedDiff":diff,"FromRSE":row[self.pri_camera_id_col],"FromTime":entry_pri_utc_time,"ToRSE":"NA","ToTime":exit_pri_utc_time,"EntrySecTime":entry_sec_utc_time,"ExitSecTime":exit_sec_utc_time,"EntryTimeDiff":entry_time_diff.total_seconds(),"ExitTimeDiff":exit_time_diff.total_seconds()})                        
+                        self.validationData.oboData.append({"PassageID":vrm + "_" + str(passage_id), "DateTime":row[self.entry_pri_time_col],"VRM":vrm,"Speed":row[self.pri_speed_col],"SecSpeed":sec_speed,"PriSecSpeedDiff":diff,"FromRSE":row[self.pri_camera_id_col],"FromTime":entry_pri_utc_time,"ToRSE":"NA","ToTime":exit_pri_utc_time,"EntrySecTime":entry_sec_utc_time,"ExitSecTime":exit_sec_utc_time,"EntryTimeDiff":entry_time_diff.total_seconds(),"ExitTimeDiff":exit_time_diff.total_seconds()})                        
                         passage_id+=1
         else:
-            ERCUFile = open(file)
+            OBOFile = open(file)
             #Process Speed Spike
-            for ERCUDataLine in ERCUFile:
-                ERCUDataList=re.split(r'\t+', ERCUDataLine.rstrip('\t'))
+            for OBODataLine in OBOFile:
+                OBODataList=re.split(r'\t+', OBODataLine.rstrip('\t'))
 
                 #Ignore header line:
-                if ERCUDataList[0] != "PassageID":
-                    passageID=ERCUDataList[0]
-                    dateTime=ERCUDataList[1]
-                    fromRSE=ERCUDataList[2]
-                    toRSE=ERCUDataList[3]
-                    fromEpochTime=ERCUDataList[4]
-                    toEpochTime=ERCUDataList[5]
-                    speed=ERCUDataList[6].rstrip()
-                    self.validationData.ercuData.append({"PassageID":passageID, "DateTime":dateTime,"Speed":speed,"FromRSE":fromRSE,"FromEpochTime":fromEpochTime,"ToRSE":toRSE,"ToEpochTime":toEpochTime})
+                if OBODataList[0] != "PassageID":
+                    passageID=OBODataList[0]
+                    dateTime=OBODataList[1]
+                    fromRSE=OBODataList[2]
+                    toRSE=OBODataList[3]
+                    fromEpochTime=OBODataList[4]
+                    toEpochTime=OBODataList[5]
+                    speed=OBODataList[6].rstrip()
+                    self.validationData.oboData.append({"PassageID":passageID, "DateTime":dateTime,"Speed":speed,"FromRSE":fromRSE,"FromEpochTime":fromEpochTime,"ToRSE":toRSE,"ToEpochTime":toEpochTime})
                     passageID=None
                     dateTime=None
                     speed=None
@@ -386,29 +385,29 @@ class linkValidation:
                     fromEpochTime=None
                     toRSE=None
 
-    def getPassagesFromERCU(self):
-        #Connect to ERCU and get passage information
+    def getPassagesFromOBO(self):
+        #Connect to OBO and get passage information
         mydb = mysql.connector.connect( host=self.validationData.instationIP, user=self.validationData.username, password=self.validationData.password, database="liftdb", ssl_disabled=True)
         cur = mydb.cursor()
         sql="SELECT a.PASSAGE_ID,a.TIMEDATE,a.VRM,a.PRIMARY_SPEED,a.ENTRY_RSE_ID, a.EXIT_RSE_ID, b.CAPTUREDATE_MS, c.CAPTUREDATE_MS from violationcreation.speedviolations_" + self.validationData.searchDateTime + " a join liftdb.ernoncompliantlog_" + self.validationData.searchDateTime + " b on a.ENTRY_ERID = b.ER_ID join liftdb.ernoncompliantlog_" + self.validationData.searchDateTime + " c on a.EXIT_ERID = c.ER_ID where a.VRM='" + self.validationData.VRM + "' and b.RSE_ID IS NOT null and c.RSE_ID IS NOT null"
 
         cur.execute(sql)
-        ercuData=cur.fetchall()
+        oboData=cur.fetchall()
         cur.close()
         mydb.close()
 
-        for passage in ercuData:
-            self.validationData.ercuData.append({"PassageID":passage[0], "DateTime":passage[1].strftime("%d/%m/%Y %H:%M:%S"),"Speed":str(passage[3]),"FromRSE":str(passage[4]),"FromTime":str(passage[6]),"ToRSE":str(passage[5]),"ToTime":str(passage[7])})
+        for passage in oboData:
+            self.validationData.oboData.append({"PassageID":passage[0], "DateTime":passage[1].strftime("%d/%m/%Y %H:%M:%S"),"Speed":str(passage[3]),"FromRSE":str(passage[4]),"FromTime":str(passage[6]),"ToRSE":str(passage[5]),"ToTime":str(passage[7])})
 
         
     def doComparison(self):
         currentProgress=int((self.UI.pbTotal-1/self.UI.pbTotal)*100)
         self.UI.updateAverageSpeedValidationPB.emit({"progress":currentProgress,"message":"Calculating Passages"})
-        f = open(self.save_path, "w")
+        f = open(f"{self.plate}_vbox_cut_data.csv","w")
         f.write("PassageID,Sats,Time,Speed,Lat,Long\n")
 
 
-        for passage in self.validationData.ercuData:   #For each ERCU passage do a calculation from GPS data
+        for passage in self.validationData.oboData:   #For each OBO passage do a calculation from GPS data
             vbox_cut_data=[]
             validity=""
             totalSpeed=0
@@ -437,13 +436,13 @@ class linkValidation:
                 avSpeed=totalSpeed / totalGPSPoints
                 #print(f"{totalSpeed} : {totalGPSPoints} : {avSpeed}")
                 percentDiff=((float(passage['Speed']) - avSpeed) / avSpeed * 100)
-                ercuSpeed=passage['Speed']
+                oboSpeed=passage['Speed']
 
                 #Check validity of run against Home Office requirements
-                if (float(ercuSpeed) < 66 and (float(avSpeed) - float(ercuSpeed)) > 2) or \
-                        (float(ercuSpeed) < 50 and (float(avSpeed) - float(ercuSpeed)) < -5) or \
-                        (float(ercuSpeed) > 66 and percentDiff > 3) or \
-                        (float(ercuSpeed) > 50 and percentDiff < -10):
+                if (float(oboSpeed) < 66 and (float(avSpeed) - float(oboSpeed)) > 2) or \
+                        (float(oboSpeed) < 50 and (float(avSpeed) - float(oboSpeed)) < -5) or \
+                        (float(oboSpeed) > 66 and percentDiff > 3) or \
+                        (float(oboSpeed) > 50 and percentDiff < -10):
                     validity="Invalid"
                 else:
                     validity="Valid"
@@ -457,22 +456,20 @@ class linkValidation:
                 #self.validationData.validationResultData.append([passage['PassageID'],str(passage['DateTime']).split(' ')[0],passage['VRM'],str(passage['DateTime']).split(' ')[1],passage['FromRSE'],passage['ToRSE'],round(avSpeed,3),passage['Speed'],str(round(percentDiff,3)),vbox_start,vbox_end,totalGPSPoints,gpsErrorPoints])
                 self.validationData.validationResultData.append([passage['PassageID'],str(passage['DateTime']),str(passage['EntrySecTime'])[:-3],passage['EntryTimeDiff'], str(passage['ToTime'])[:-3],str(passage['ExitSecTime'])[:-3],passage['ExitTimeDiff'],str(passage['VRM']),passage['FromRSE'],passage['ToRSE'],round(avSpeed,3),passage['Speed'],str(round(percentDiff,3)),speed_diff,passage['SecSpeed'],passage['PriSecSpeedDiff'],vbox_start[:-3],vbox_end[:-3],totalGPSPoints,gpsErrorPoints])
         
-                self.validation_headers=['Passage','Pri Entry Time','Sec Entry Time','Entry Time Diff','Pri Exit Time','Sec Exit Time','Exit Time Diff','VRM','From','To','GPS Spd','Pri ERCU Spd','% Diff',"Spd Diff","Sec Spd","% Pri/Sec Spd Diff","FromVbox","ToVbox",'Points','Errors']
+                self.validation_headers=['Passage','Pri Entry Time','Sec Entry Time','Entry Time Diff','Pri Exit Time','Sec Exit Time','Exit Time Diff','VRM','From','To','GPS Spd','Pri OBO Spd','% Diff',"Spd Diff","Sec Spd","% Pri/Sec Spd Diff","FromVbox","ToVbox",'Points','Errors']
         
-        f.close()
-
     #Save validation runs in Google Earth KML format
     def saveKML(self,linkValData):
         self.validationData = linkValData
         self.UI.updateAverageSpeedValidationPB.emit({"progress":0,"message":"Importing GPS File(s)"})
-        self.UI.pbTotal=len(self.validationData.ercuData*2)
+        self.UI.pbTotal=len(self.validationData.oboData*2)
         MinSats=int(self.validationData.commissioningConfig['AverageSpeed']['min_sats'])
 
         if self.validationData.saveFilename != "":
             f = open(self.validationData.saveFilename, "w")
             f.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?><kml xmlns=\"http://earth.google.com/kml/2.1\"><Document><Folder><name>Filtered Passage Data</name><description>GPS data for each passage filtered by minimum number of satellites (" + str(MinSats) + ")</description>\n")
 
-            for passage in self.validationData.ercuData:   #Step through passages one by one
+            for passage in self.validationData.oboData:   #Step through passages one by one
                 #KML PATH START
                 f.write("<Placemark><name>" + passage['FromRSE'] + "_" + passage['PassageID'] + "</name><LineString><tessellate>1</tessellate><coordinates>\n")
                 for gpsPoint in self.validationData.gpsData:
@@ -520,7 +517,7 @@ class linkValidation:
 
             f.write("</Folder><Folder><name>Raw Unfiltered GPS Data</name><description>Raw GPS data for each passage with no satellite filtering applied.</description>")
 
-            for passage in self.validationData.ercuData:   #Step through passages one by one
+            for passage in self.validationData.oboData:   #Step through passages one by one
                 #KML PATH START
                 f.write("<Placemark><name>" + passage['PassageID'] + "</name><LineString><tessellate>1</tessellate><coordinates>\n")
                 for gpsPoint in self.validationData.gpsData:
@@ -570,12 +567,12 @@ class linkValidation:
             f.close()
                
 
-    def saveERCUData(self, linkValData):
+    def saveOBOData(self, linkValData):
         self.validationData = linkValData
 
-        #Export ERCU datafile to file
+        #Export OBO datafile to file
         f = open(self.validationData.saveFilename, "w")
         f.write("PASSAGE_ID\tTIMEDATE\tPRIMARY_SPEED\tFROM_RSE\tFROM_TIMEDATE_MS\tTO_RSE\tTO_RSE_MS\n")
-        for line in self.validationData.ercuData:
+        for line in self.validationData.oboData:
             f.write(line["PassageID"] + "\t" + line["DateTime"] + "\t" + line["Speed"] + "\t" + line["FromRSE"] + "\t" + line["FromTime"] + "\t" + line["ToRSE"] + "\t" + line["ToEpochTime"] + "\n")
         f.close()

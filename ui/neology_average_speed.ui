@@ -128,7 +128,14 @@
           <item>
            <widget class="QPushButton" name="btn_file_check">
             <property name="text">
-             <string>Compare GPS/ERCU Data</string>
+             <string>Compare GPS/OBO Data</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btn_wizard">
+            <property name="text">
+             <string>Comparison Wizard</string>
             </property>
            </widget>
           </item>
@@ -143,6 +150,13 @@
            <widget class="QPushButton" name="btn_export_validation_data">
             <property name="text">
              <string>Export</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btn_export_vbox_cut">
+            <property name="text">
+             <string>Export Vbox Cut Data</string>
             </property>
            </widget>
           </item>

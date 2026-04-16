@@ -27,6 +27,7 @@ from baseline_measurement import SectionData,ProcessSectionData
 
 from averagespeed_config import AverageSpeedConfig
 from link_validation import AverageSpeedLinkValidationManualComparison,AverageSpeedLinkValidationSaveKML
+from validation_wizard import ValidationWizard
 
 
 
@@ -101,12 +102,16 @@ class MainWindow(QtWidgets.QMainWindow):
         #Average Speed Tab
         self.btn_file_check = self.findChild(QtWidgets.QPushButton,'btn_file_check')
         self.btn_file_check.clicked.connect(self.btn_file_checkPressed)
+        self.btn_wizard = self.findChild(QtWidgets.QPushButton,'btn_wizard')
+        self.btn_wizard.clicked.connect(self.btn_wizardPressed)
 
         self.btn_save_kml = self.findChild(QtWidgets.QPushButton,'btn_save_kml')
         self.btn_save_kml.clicked.connect(self.btn_save_kmlPressed)
 
         self.btn_export_validation_data = self.findChild(QtWidgets.QPushButton,'btn_export_validation_data')
         self.btn_export_validation_data.clicked.connect(self.export_validation_data)
+        self.btn_export_vbox_cut = self.findChild(QtWidgets.QPushButton,'btn_export_vbox_cut')
+        self.btn_export_vbox_cut.clicked.connect(self.export_vbox_cut_data)
         self.tableValidation=self.findChild(QtWidgets.QTableView,'tbl_validation')
 
         
@@ -138,9 +143,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.btn_save_kml.setEnabled(False)
         self.btn_export_validation_data.setEnabled(False)
+        self.btn_export_vbox_cut.setEnabled(False)
 
-        #self.validation_headers=['Passage','Date','VRM','Time','From','To','GPS','ERCU','% Diff','Points','Errors','Validity']
-        #self.validation_headers=['Passage','Date','VRM','Time','From','To','GPS','ERCU','% Diff', "FromVbox","ToVbox",'Points','Errors']
+        #self.validation_headers=['Passage','Date','VRM','Time','From','To','GPS','OBO','% Diff','Points','Errors','Validity']
+        #self.validation_headers=['Passage','Date','VRM','Time','From','To','GPS','OBO','% Diff', "FromVbox","ToVbox",'Points','Errors']
         self.validation_headers=['Passage','Pri Entry Time','Sec Entry Time','Entry Time Diff','Pri Exit Time','Sec Exit Time','Exit Time Diff','VRM','From','To','Vbox Average Spd','Pri OBO Spd','Vbox/Pri Speed % Diff',"Vbox / Pri Speed MPH Diff","Sec OBO Speed","% Pri/Sec Spd Diff","FromVboxCutTime","ToVboxCutTime",'GPS Points','# Errors (low satellite)']
         self.gps_data_headers=['Sat #','Epoch','Time','Lat','Long','Speed','Northing','Easting','Altitude']
 
@@ -264,29 +270,51 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def btn_file_checkPressed(self):
         if str(self.line_plate.text()) != "" or str(self.line_hash.text()) != "":
-
             GPSFilenames, check = QFileDialog.getOpenFileNames(None,"Select Vbox/OxTS GPS File(s):","","All Files (*.*);;Vbox Files (*.vbo);;OxTS Files (*.csv)",)
             if not check: return
             if any("vbo" in s.lower() for s in GPSFilenames) and any("csv" in s.lower() for s in GPSFilenames):
                 self.showErrorMessagebox("Incorrect selection","Please select only Vbox or only OxTS csv files.")
                 return
-            ERCUDataFilenames , check = QFileDialog.getOpenFileNames(None,"Select ERCU Data File","","All Files (*.*);;Text Files (*.txt);;CSV Files (*.csv)",)
+            OBODataFilenames, check = QFileDialog.getOpenFileNames(None,"Select OBO Data File","","OBO Files (*.txt *.xlsx);;Text Files (*.txt);;Excel Files (*.xlsx);;All Files (*.*)",)
             if not check: return
-
-            save_path, check = QFileDialog.getSaveFileName(None, "Save Vbox Cut Data:", f"{self.line_plate.text()}_vbox_cut_data.csv", "CSV Files (*.csv);;All Files (*.*)")
-            if not check: return
-
-            self.btn_save_kml.setEnabled(False)
-            self.btn_export_validation_data.setEnabled(False)
-            self.btn_file_check.setEnabled(False)
-            self.tableValidation.setModel(None)
-            self.AverageSpeedValidationManualCheckCompare=AverageSpeedLinkValidationManualComparison(GPSFilenames,ERCUDataFilenames,self.commissioningConfig, self.line_plate.text(), self.line_hash.text(), save_path)
-            self.AverageSpeedValidationManualCheckCompare.updateAverageSpeedValidationPB.connect(self.updateAverageSpeedValidationPB)
-            self.AverageSpeedValidationManualCheckCompare.updateValidationTable.connect(self.updateValidationTable)
-            self.AverageSpeedValidationManualCheckCompare.validationThreadFinished.connect(self.validationThreadFinished)
-            self.AverageSpeedValidationManualCheckCompare.start()
+            self._wizard = None
+            self._startComparison(GPSFilenames, OBODataFilenames, self.line_plate.text(), self.line_hash.text())
         else:
             self.showErrorMessagebox("Invalid plate","Please enter a plate")
+
+    def btn_wizardPressed(self):
+        self._wizard = ValidationWizard(self.line_plate.text(), self.line_hash.text(), self)
+        self._wizard.comparisonRequested.connect(self._onWizardComparisonRequested)
+        self._wizard.show()
+
+    def _onWizardComparisonRequested(self):
+        self.line_plate.setText(self._wizard.get_plate())
+        self.line_hash.setText(self._wizard.get_plate_hash())
+        self._startComparison(self._wizard.get_gps_files(), self._wizard.get_obo_files(), self._wizard.get_plate(), self._wizard.get_plate_hash())
+
+    def _onWizardProgress(self, str_val):
+        if self._wizard is None:
+            return
+        progress = str_val.get("progress", 0)
+        message  = str_val.get("message", "")
+        page = self._wizard.page(self._wizard.PROGRESS_PAGE)
+        page.progress_bar.setValue(progress)
+        page.lbl_status.setText(message)
+
+    def _startComparison(self, GPSFilenames, OBODataFilenames, plate, plate_hash):
+        self.btn_save_kml.setEnabled(False)
+        self.btn_export_validation_data.setEnabled(False)
+        self.btn_export_vbox_cut.setEnabled(False)
+        self.btn_file_check.setEnabled(False)
+        self.btn_wizard.setEnabled(False)
+        self.tableValidation.setModel(None)
+        self.AverageSpeedValidationManualCheckCompare=AverageSpeedLinkValidationManualComparison(GPSFilenames,OBODataFilenames,self.commissioningConfig, plate, plate_hash)
+        self.AverageSpeedValidationManualCheckCompare.updateAverageSpeedValidationPB.connect(self.updateAverageSpeedValidationPB)
+        self.AverageSpeedValidationManualCheckCompare.updateValidationTable.connect(self.updateValidationTable)
+        self.AverageSpeedValidationManualCheckCompare.validationThreadFinished.connect(self.validationThreadFinished)
+        if hasattr(self, '_wizard') and self._wizard is not None:
+            self.AverageSpeedValidationManualCheckCompare.updateAverageSpeedValidationPB.connect(self._onWizardProgress)
+        self.AverageSpeedValidationManualCheckCompare.start()
 
 
 
@@ -317,6 +345,15 @@ class MainWindow(QtWidgets.QMainWindow):
             ws.append(row)
         wb.save(f"{saveFilename}.xlsx")
 
+
+    def export_vbox_cut_data(self):
+        saveFilename, check = QFileDialog.getSaveFileName(None, "Save Vbox Cut Data:", f"{self.line_plate.text()}_vbox_cut_data.csv", "CSV Files (*.csv);;All Files (*.*)")
+        if not check: return
+
+        with open(saveFilename, "w") as f:
+            f.write("PassageID,Sats,Time,Speed,Lat,Long\n")
+            for row in self.linkValidationData.vboxCutData:
+                f.write(",".join(str(v) for v in row) + "\n")
 
     def updateValidationTable(self, linkValidationData):
         self.linkValidationData=linkValidationData
@@ -382,7 +419,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 if self.chk_pct_only.isChecked():
                     passed = (-high_neg_pct <= pct_diff <= high_pos_pct)
                 elif pri_speed <= speed_breakpoint:
-                    # mph_diff = vbox - ercu, so positive means vbox is faster
+                    # mph_diff = vbox - obo, so positive means vbox is faster
                     passed = (-low_neg_mph <= mph_diff <= low_pos_mph)
                 else:
                     passed = (-high_neg_pct <= pct_diff <= high_pos_pct)
@@ -398,13 +435,49 @@ class MainWindow(QtWidgets.QMainWindow):
             self.pbAverageSpeedValidation.setValue(str_val["progress"])
         self.pbAverageSpeedValidation.setFormat(str_val['message'])
         self.pbAverageSpeedValidation.setAlignment(QtCore.Qt.AlignCenter)
+
  
     def validationThreadFinished(self, result):
         self.btn_file_check.setEnabled(True)
+        self.btn_wizard.setEnabled(True)
         if result['Result']:
             if len(self.linkValidationData.validationResultData):
                 self.btn_save_kml.setEnabled(True)
                 self.btn_export_validation_data.setEnabled(True)
+                self.btn_export_vbox_cut.setEnabled(True)
+
+                # Build pass/fail counts using current threshold settings and show in wizard
+                if hasattr(self, '_wizard') and self._wizard is not None:
+                    total  = len(self.linkValidationData.validationResultData)
+                    passed = 0
+                    failed = 0
+                    bp     = self.spin_speed_breakpoint.value()
+                    lp     = self.spin_threshold_low_pos.value()
+                    ln     = self.spin_threshold_low_neg.value()
+                    hp     = self.spin_threshold_high_pos.value()
+                    hn     = self.spin_threshold_high_neg.value()
+                    pct_only = self.chk_pct_only.isChecked()
+                    val_on   = self.chk_validation_enabled.isChecked()
+                    for row in self.linkValidationData.validationResultData:
+                        try:
+                            pri_speed = float(row[11])
+                            mph_diff  = float(row[13])
+                            pct_diff  = float(row[12])
+                            if not val_on:
+                                passed += 1
+                            elif pct_only:
+                                passed += 1 if (-hn <= pct_diff <= hp) else 0
+                            elif pri_speed <= bp:
+                                passed += 1 if (-ln <= mph_diff <= lp) else 0
+                            else:
+                                passed += 1 if (-hn <= pct_diff <= hp) else 0
+                        except (ValueError, TypeError, IndexError):
+                            passed += 1
+                    failed = total - passed
+                    self._wizard.show_results(total, passed, failed)
+                    self._wizard.mark_complete()
+                    self._wizard.show()
+
             if "DisplayMessage" in result:
                 self.showInfoMessagebox(result['Title'], result['Text'])
         else:
