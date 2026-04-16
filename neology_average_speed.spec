@@ -74,7 +74,6 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='neology2.ico',
-    version='version_info.txt',   # Optional: remove this line if not using a version resource file
 )
 
 coll = COLLECT(

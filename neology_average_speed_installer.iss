@@ -51,11 +51,11 @@ WizardSizePercent=120
 DisableWelcomePage=no
 
 ; Version info embedded in the installer executable
-VersionInfoVersion={#AppVersion}
+VersionInfoVersion=0.1.0.0
 VersionInfoCompany={#AppPublisher}
 VersionInfoDescription={#AppName} Installer
 VersionInfoProductName={#AppName}
-VersionInfoProductVersion={#AppVersion}
+VersionInfoProductVersion=0.1.0.0
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -95,10 +95,7 @@ Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(
 Type: filesandordirs; Name: "{app}\logs"
 
 [Code]
-// Optional: warn the user if a previous version is already running
 function InitializeSetup(): Boolean;
-var
-  ResultCode: Integer;
 begin
   Result := True;
 end;

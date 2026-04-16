@@ -121,6 +121,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_import_config_file.clicked.connect(self.btnImportConfigFilePressed)
         self.btn_import_config_file.setVisible(False)
 
+        self.chk_validation_enabled  = self.findChild(QtWidgets.QCheckBox, 'chk_validation_enabled')
+        self.chk_pct_only            = self.findChild(QtWidgets.QCheckBox, 'chk_pct_only')
+        self.spin_speed_breakpoint   = self.findChild(QtWidgets.QDoubleSpinBox, 'spin_speed_breakpoint')
+        self.spin_threshold_low_pos  = self.findChild(QtWidgets.QDoubleSpinBox, 'spin_threshold_low_pos')
+        self.spin_threshold_low_neg  = self.findChild(QtWidgets.QDoubleSpinBox, 'spin_threshold_low_neg')
+        self.spin_threshold_high_pos = self.findChild(QtWidgets.QDoubleSpinBox, 'spin_threshold_high_pos')
+        self.spin_threshold_high_neg = self.findChild(QtWidgets.QDoubleSpinBox, 'spin_threshold_high_neg')
+        self.chk_validation_enabled.stateChanged.connect(self.onValidationEnabledChanged)
+        self.chk_pct_only.stateChanged.connect(self.onPctOnlyChanged)
+        self.spin_speed_breakpoint.valueChanged.connect(self.recolourValidationTable)
+        self.spin_threshold_low_pos.valueChanged.connect(self.recolourValidationTable)
+        self.spin_threshold_low_neg.valueChanged.connect(self.recolourValidationTable)
+        self.spin_threshold_high_pos.valueChanged.connect(self.recolourValidationTable)
+        self.spin_threshold_high_neg.valueChanged.connect(self.recolourValidationTable)
+
         self.btn_save_kml.setEnabled(False)
         self.btn_export_validation_data.setEnabled(False)
 
@@ -258,11 +273,14 @@ class MainWindow(QtWidgets.QMainWindow):
             ERCUDataFilenames , check = QFileDialog.getOpenFileNames(None,"Select ERCU Data File","","All Files (*.*);;Text Files (*.txt);;CSV Files (*.csv)",)
             if not check: return
 
+            save_path, check = QFileDialog.getSaveFileName(None, "Save Vbox Cut Data:", f"{self.line_plate.text()}_vbox_cut_data.csv", "CSV Files (*.csv);;All Files (*.*)")
+            if not check: return
+
             self.btn_save_kml.setEnabled(False)
             self.btn_export_validation_data.setEnabled(False)
             self.btn_file_check.setEnabled(False)
             self.tableValidation.setModel(None)
-            self.AverageSpeedValidationManualCheckCompare=AverageSpeedLinkValidationManualComparison(GPSFilenames,ERCUDataFilenames,self.commissioningConfig, self.line_plate.text(), self.line_hash.text())
+            self.AverageSpeedValidationManualCheckCompare=AverageSpeedLinkValidationManualComparison(GPSFilenames,ERCUDataFilenames,self.commissioningConfig, self.line_plate.text(), self.line_hash.text(), save_path)
             self.AverageSpeedValidationManualCheckCompare.updateAverageSpeedValidationPB.connect(self.updateAverageSpeedValidationPB)
             self.AverageSpeedValidationManualCheckCompare.updateValidationTable.connect(self.updateValidationTable)
             self.AverageSpeedValidationManualCheckCompare.validationThreadFinished.connect(self.validationThreadFinished)
@@ -314,6 +332,66 @@ class MainWindow(QtWidgets.QMainWindow):
             tableValidationHeader=self.tableValidation.horizontalHeader()
             for x in range(0,len(self.validation_headers)-1):
                 tableValidationHeader.setSectionResizeMode(x, QtWidgets.QHeaderView.ResizeToContents)
+            self.recolourValidationTable()
+
+    def setValidationControlsEnabled(self, enabled):
+        pct_only = self.chk_pct_only.isChecked()
+        self.chk_pct_only.setEnabled(enabled)
+        self.spin_threshold_high_pos.setEnabled(enabled)
+        self.spin_threshold_high_neg.setEnabled(enabled)
+        self.spin_speed_breakpoint.setEnabled(enabled and not pct_only)
+        self.spin_threshold_low_pos.setEnabled(enabled and not pct_only)
+        self.spin_threshold_low_neg.setEnabled(enabled and not pct_only)
+
+    def onValidationEnabledChanged(self):
+        self.setValidationControlsEnabled(self.chk_validation_enabled.isChecked())
+        self.recolourValidationTable()
+
+    def onPctOnlyChanged(self):
+        # Grey out the speed breakpoint and low speed controls when pct-only is active
+        self.setValidationControlsEnabled(self.chk_validation_enabled.isChecked())
+        self.recolourValidationTable()
+
+    def recolourValidationTable(self):
+        # Vbox/Pri Speed % Diff is col 12, Vbox/Pri Speed MPH Diff is col 13
+        # Vbox Average Spd is col 10, Pri OBO Spd is col 11
+        if not hasattr(self, 'model') or self.model is None:
+            return
+
+        if not self.chk_validation_enabled.isChecked():
+            for row in range(self.model.rowCount(None)):
+                for col in range(len(self.validation_headers)):
+                    self.model.change_color(row, col, None)
+            return
+
+        low_pos_mph        = self.spin_threshold_low_pos.value()
+        low_neg_mph        = self.spin_threshold_low_neg.value()
+        high_pos_pct       = self.spin_threshold_high_pos.value()
+        high_neg_pct       = self.spin_threshold_high_neg.value()
+        speed_breakpoint   = self.spin_speed_breakpoint.value()
+
+        GREEN = QColor(144, 238, 144)
+        RED   = QColor(255, 102, 102)
+
+        for row in range(self.model.rowCount(None)):
+            try:
+                pri_speed  = float(self.model._data[row][11])   # Pri OBO Speed
+                mph_diff   = float(self.model._data[row][13])   # Vbox/Pri Speed MPH Diff
+                pct_diff   = float(self.model._data[row][12])   # Vbox/Pri Speed % Diff
+
+                if self.chk_pct_only.isChecked():
+                    passed = (-high_neg_pct <= pct_diff <= high_pos_pct)
+                elif pri_speed <= speed_breakpoint:
+                    # mph_diff = vbox - ercu, so positive means vbox is faster
+                    passed = (-low_neg_mph <= mph_diff <= low_pos_mph)
+                else:
+                    passed = (-high_neg_pct <= pct_diff <= high_pos_pct)
+
+                colour = GREEN if passed else RED
+                for col in range(len(self.validation_headers)):
+                    self.model.change_color(row, col, colour)
+            except (ValueError, TypeError, IndexError):
+                pass
 
     def updateAverageSpeedValidationPB(self, str_val):
         if "progress" in str_val:

@@ -54,7 +54,7 @@ class AverageSpeedLinkValidationManualComparison(QtCore.QThread):
     validationThreadFinished = QtCore.pyqtSignal(dict)
     updateAverageSpeedValidationPB = QtCore.pyqtSignal(dict)
         
-    def __init__(self,GPSFilenames,ERCUDataFilenames,commissioningConfig, plate, plate_hash):
+    def __init__(self,GPSFilenames,ERCUDataFilenames,commissioningConfig, plate, plate_hash, save_path):
         super(QtCore.QThread,self).__init__()
         self.linkValData = linkValidationData()
         self.linkValData.gpsFilenames=GPSFilenames
@@ -63,11 +63,12 @@ class AverageSpeedLinkValidationManualComparison(QtCore.QThread):
         self.linkValData.commissioningConfig=commissioningConfig
         self.plate=str(plate)
         self.plate_hash=str(plate_hash)
+        self.save_path=save_path
 
     def run(self):
         try:
             linkVal = linkValidation(self)
-            self.linkValData=linkVal.manualComparison(self.linkValData,self.plate, self.plate_hash)
+            self.linkValData=linkVal.manualComparison(self.linkValData,self.plate, self.plate_hash, self.save_path)
             self.updateValidationTable.emit(self.linkValData)
             self.validationThreadFinished.emit({"Result":True, "Title":"Validation Complete", "Text":"Manual validation comparison is complete."})
             self.updateAverageSpeedValidationPB.emit({"progress":100,"message":"Completed Successfully"})
@@ -103,11 +104,12 @@ class linkValidation:
         self.UI=UI
         self.pbProgress=0
 
-    def manualComparison(self,linkValData,plate, plate_hash):
+    def manualComparison(self,linkValData,plate, plate_hash, save_path):
         #Do link validation comparison between GPS and ERCU files
         self.validationData = linkValData
         self.plate=str(plate)
         self.plate_hash=str(plate_hash)
+        self.save_path=save_path
 
         if self.validationData.gpsFilenames and self.validationData.ercuFilenames:
             self.importGPSFiles()
@@ -402,7 +404,7 @@ class linkValidation:
     def doComparison(self):
         currentProgress=int((self.UI.pbTotal-1/self.UI.pbTotal)*100)
         self.UI.updateAverageSpeedValidationPB.emit({"progress":currentProgress,"message":"Calculating Passages"})
-        f = open(f"{self.plate}_vbox_cut_data.csv","w")
+        f = open(self.save_path, "w")
         f.write("PassageID,Sats,Time,Speed,Lat,Long\n")
 
 

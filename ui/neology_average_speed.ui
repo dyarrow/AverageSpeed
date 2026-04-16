@@ -182,6 +182,108 @@
          </layout>
         </item>
         <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_validation">
+          <item>
+           <widget class="QCheckBox" name="chk_validation_enabled">
+            <property name="text">
+             <string>Enable Validation</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QCheckBox" name="chk_pct_only">
+            <property name="text">
+             <string>Percentage Only</string>
+            </property>
+            <property name="toolTip">
+             <string>When checked, use percentage thresholds for all speeds regardless of speed breakpoint</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_speed_breakpoint">
+            <property name="text">
+             <string>Speed Breakpoint (mph):</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="spin_speed_breakpoint">
+            <property name="minimum"><double>0.000000</double></property>
+            <property name="maximum"><double>200.000000</double></property>
+            <property name="singleStep"><double>1.000000</double></property>
+            <property name="value"><double>62.000000</double></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_threshold_low">
+            <property name="text">
+             <string>Low Spd (mph) +/-:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="spin_threshold_low_pos">
+            <property name="toolTip"><string>Low speed positive tolerance (mph)</string></property>
+            <property name="minimum"><double>0.000000</double></property>
+            <property name="maximum"><double>20.000000</double></property>
+            <property name="singleStep"><double>0.500000</double></property>
+            <property name="value"><double>3.000000</double></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="spin_threshold_low_neg">
+            <property name="toolTip"><string>Low speed negative tolerance (mph)</string></property>
+            <property name="minimum"><double>0.000000</double></property>
+            <property name="maximum"><double>20.000000</double></property>
+            <property name="singleStep"><double>0.500000</double></property>
+            <property name="value"><double>3.000000</double></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="label_threshold_high">
+            <property name="text">
+             <string>High Spd (%) +/-:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="spin_threshold_high_pos">
+            <property name="toolTip"><string>High speed positive tolerance (%)</string></property>
+            <property name="minimum"><double>0.000000</double></property>
+            <property name="maximum"><double>20.000000</double></property>
+            <property name="singleStep"><double>0.500000</double></property>
+            <property name="value"><double>3.000000</double></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="spin_threshold_high_neg">
+            <property name="toolTip"><string>High speed negative tolerance (%)</string></property>
+            <property name="minimum"><double>0.000000</double></property>
+            <property name="maximum"><double>20.000000</double></property>
+            <property name="singleStep"><double>0.500000</double></property>
+            <property name="value"><double>3.000000</double></property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="horizontalSpacer_6">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+        <item>
          <widget class="QTableView" name="tbl_validation">
           <property name="font">
            <font>
