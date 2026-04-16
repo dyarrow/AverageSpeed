@@ -342,12 +342,13 @@ class Page_Progress(QWizardPage):
 
 
 class Page_Results(QWizardPage):
-    """Final page showing pass/fail summary."""
+    """Final page showing pass/fail summary and validation rules."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setTitle("Comparison Complete")
         self.setSubTitle("The GPS and OBO data have been compared. Results are shown below.")
+        self._config = {}
 
         layout = QVBoxLayout()
 
@@ -355,6 +356,11 @@ class Page_Results(QWizardPage):
         self.results_layout = QVBoxLayout()
         self.results_group.setLayout(self.results_layout)
         layout.addWidget(self.results_group)
+
+        self.rules_group = QGroupBox("Validation Rules Applied")
+        self.rules_layout = QVBoxLayout()
+        self.rules_group.setLayout(self.rules_layout)
+        layout.addWidget(self.rules_group)
 
         self.lbl_note = QLabel("The comparison table in the main window has been updated.")
         self.lbl_note.setAlignment(Qt.AlignCenter)
@@ -364,18 +370,25 @@ class Page_Results(QWizardPage):
         layout.addStretch()
         self.setLayout(layout)
 
-    def show_results(self, total, passed, failed):
+    def show_results(self, total, passed, failed, config=None):
+        # Clear results
         while self.results_layout.count():
             item = self.results_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
             elif item.layout():
-                # clear nested layout
                 while item.layout().count():
                     sub = item.layout().takeAt(0)
                     if sub.widget():
                         sub.widget().deleteLater()
 
+        # Clear rules
+        while self.rules_layout.count():
+            item = self.rules_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        # Stats grid
         grid = QGridLayout()
 
         def stat_label(text, colour=None):
@@ -403,6 +416,42 @@ class Page_Results(QWizardPage):
 
         self.results_layout.addLayout(grid)
         self.results_layout.addWidget(summary)
+
+        # Validation rules
+        if config:
+            cfg = config.get("AverageSpeed", {})
+            pct_only      = cfg.get("pct_only", "false").lower() == "true"
+            breakpoint    = float(cfg.get("speed_breakpoint", 62))
+            low_pos       = float(cfg.get("threshold_low_pos", 3))
+            low_neg       = float(cfg.get("threshold_low_neg", 3))
+            high_pos      = float(cfg.get("threshold_high_pos", 3))
+            high_neg      = float(cfg.get("threshold_high_neg", 3))
+            min_sats      = int(float(cfg.get("min_sats", 4)))
+            val_enabled   = True  # if we got here, validation ran
+
+            if pct_only:
+                rule_text = (
+                    f"<b>Percentage Only mode</b> — all speeds judged by % difference:<br>"
+                    f"&nbsp;&nbsp;Pass if GPS speed is within <b>+{high_pos}% / −{high_neg}%</b> of OBO speed"
+                )
+            else:
+                rule_text = (
+                    f"<b>Speed ≤ {breakpoint} mph</b> — Pass if GPS speed is within "
+                    f"<b>+{low_pos} / −{low_neg} mph</b> of OBO speed<br>"
+                    f"<b>Speed &gt; {breakpoint} mph</b> — Pass if GPS speed is within "
+                    f"<b>+{high_pos}% / −{high_neg}%</b> of OBO speed"
+                )
+
+            rule_lbl = QLabel(rule_text)
+            rule_lbl.setTextFormat(Qt.RichText)
+            rule_lbl.setWordWrap(True)
+            self.rules_layout.addWidget(rule_lbl)
+
+            sats_lbl = QLabel(f"Minimum satellites required per GPS point: <b>{min_sats}</b>")
+            sats_lbl.setTextFormat(Qt.RichText)
+            self.rules_layout.addWidget(sats_lbl)
+        else:
+            self.rules_group.setVisible(False)
 
 
 class ValidationWizard(QWizard):
@@ -458,5 +507,5 @@ class ValidationWizard(QWizard):
     def mark_failed(self, message):
         self.page(self.PROGRESS_PAGE).mark_failed(message)
 
-    def show_results(self, total, passed, failed):
-        self.page(self.RESULTS_PAGE).show_results(total, passed, failed)
+    def show_results(self, total, passed, failed, config=None):
+        self.page(self.RESULTS_PAGE).show_results(total, passed, failed, config)

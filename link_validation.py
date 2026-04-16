@@ -18,6 +18,14 @@ from build_config import resourcesPath
 from build_config import applicationPath
 
 
+class OBOFileValidationError(Exception):
+    """Raised when an OBO file fails validation with a user-friendly message."""
+    def __init__(self, title, message):
+        super().__init__(message)
+        self.title = title
+        self.message = message
+
+
 class WSDOTInputData:
     ENTRY_PRI_TIME="Entry Primary Time"
     ENTRY_SEC_TIME="Entry Secondary Time"
@@ -72,6 +80,9 @@ class AverageSpeedLinkValidationManualComparison(QtCore.QThread):
             self.updateValidationTable.emit(self.linkValData)
             self.validationThreadFinished.emit({"Result":True, "Title":"Validation Complete", "Text":"Manual validation comparison is complete."})
             self.updateAverageSpeedValidationPB.emit({"progress":100,"message":"Completed Successfully"})
+        except OBOFileValidationError as e:
+            self.validationThreadFinished.emit({"Result":False, "Title":e.title, "Text":e.message, "DisplayMessage":True, "RichText":True})
+            self.updateAverageSpeedValidationPB.emit({"progress":0,"message":"Failed"})
         except Exception as e:
             self.validationThreadFinished.emit({"Result":False, "Title":"Validation Failed", "Text":str(e), "DisplayMessage":True})
             self.updateAverageSpeedValidationPB.emit({"progress":0,"message":""})
@@ -195,7 +206,7 @@ class linkValidation:
 
                     #Add configured time offset (in hours)
                     #utc_time = utc_time + timedelta(hours=TimeOffset)
-                    utc_time = utc_time + timedelta(hours=int(self.validationData.commissioningConfig['AverageSpeed']['time_offset']))
+                    utc_time = utc_time + timedelta(hours=int(float(self.validationData.commissioningConfig['AverageSpeed']['time_offset'])))
                     
                     #Convert to epoch in ms
                     #epochTime = (utc_time - datetime(1970, 1, 1)).total_seconds()*1000
@@ -223,7 +234,7 @@ class linkValidation:
 
                     #Add configured time offset (in hours)
                     #utc_time = utc_time + timedelta(hours=TimeOffset)
-                    utc_time = utc_time + timedelta(hours=int(self.validationData.commissioningConfig['AverageSpeed']['time_offset']))
+                    utc_time = utc_time + timedelta(hours=int(float(self.validationData.commissioningConfig['AverageSpeed']['time_offset'])))
                     
                     #Convert to epoch in ms
                     #epochTime = (utc_time - datetime(1970, 1, 1)).total_seconds()*1000
@@ -297,19 +308,66 @@ class linkValidation:
         
 
     def importOBOFile(self, file):
+        import os
+        filename = os.path.basename(file)
+
         #Check if input file is WSDOT or SpeedSpike
         if file.endswith(".xls") == True or file.endswith(".xlsx") == True:
-            #Process WSDOT excel file
-            workbook=openpyxl.load_workbook(file)
-            sheets = workbook.sheetnames
-            #sheet = workbook[sheets[0]]
+
+            # --- Load workbook ---
+            try:
+                workbook = openpyxl.load_workbook(file)
+            except Exception as e:
+                raise OBOFileValidationError(
+                    "Cannot Open OBO File",
+                    f"Could not open <b>{filename}</b>.<br><br>"
+                    f"Make sure the file is not open in Excel and is a valid .xlsx file.<br><br>"
+                    f"Detail: {str(e)}"
+                )
+
+            # --- Check for Matched sheet ---
+            if 'Matched' not in workbook.sheetnames:
+                available = ", ".join(workbook.sheetnames) or "(none)"
+                raise OBOFileValidationError(
+                    "Missing Sheet: Matched",
+                    f"The file <b>{filename}</b> does not contain a sheet named <b>Matched</b>.<br><br>"
+                    f"Sheets found: <i>{available}</i><br><br>"
+                    f"Please export the OBO data with the Matched sheet included."
+                )
+
             sheet = workbook['Matched']
-
             list_values = list(sheet.values)
-            headers=list(list_values[0])
-            
-            #self.plate_col=headers.index(WSDOTInputData.PLATE)
 
+            # --- Check sheet has data ---
+            if len(list_values) < 2:
+                raise OBOFileValidationError(
+                    "Empty Sheet",
+                    f"The <b>Matched</b> sheet in <b>{filename}</b> appears to be empty or has no data rows."
+                )
+
+            headers = list(list_values[0])
+
+            # --- Check all required columns are present ---
+            required_columns = {
+                WSDOTInputData.ENTRY_PRI_TIME: "Entry Primary Time",
+                WSDOTInputData.ENTRY_SEC_TIME: "Entry Secondary Time",
+                WSDOTInputData.EXIT_PRI_TIME:  "Exit Primary Time",
+                WSDOTInputData.EXIT_SEC_TIME:  "Exit Secondary Time",
+                WSDOTInputData.PRI_SPEED:      "Primary Speed",
+                WSDOTInputData.SEC_SPEED:      "Secondary Speed",
+                WSDOTInputData.PRI_CAM_ID:     "Primary Camera ID",
+                WSDOTInputData.LP_NUMBER:      "LP Number",
+                WSDOTInputData.LP_HASH:        "LP Hash",
+            }
+            missing = [label for col, label in required_columns.items() if col not in headers]
+            if missing:
+                missing_list = "<br>".join(f"&nbsp;&nbsp;• {m}" for m in missing)
+                raise OBOFileValidationError(
+                    "Missing Required Columns",
+                    f"The <b>Matched</b> sheet in <b>{filename}</b> is missing the following required columns:<br><br>"
+                    f"{missing_list}<br><br>"
+                    f"Please check the OBO export format and try again."
+                )
 
             self.entry_pri_time_col=headers.index(WSDOTInputData.ENTRY_PRI_TIME)
             self.entry_sec_time_col=headers.index(WSDOTInputData.ENTRY_SEC_TIME)
@@ -362,6 +420,18 @@ class linkValidation:
 
                         self.validationData.oboData.append({"PassageID":vrm + "_" + str(passage_id), "DateTime":row[self.entry_pri_time_col],"VRM":vrm,"Speed":row[self.pri_speed_col],"SecSpeed":sec_speed,"PriSecSpeedDiff":diff,"FromRSE":row[self.pri_camera_id_col],"FromTime":entry_pri_utc_time,"ToRSE":"NA","ToTime":exit_pri_utc_time,"EntrySecTime":entry_sec_utc_time,"ExitSecTime":exit_sec_utc_time,"EntryTimeDiff":entry_time_diff.total_seconds(),"ExitTimeDiff":exit_time_diff.total_seconds()})                        
                         passage_id+=1
+
+            # --- Warn if no matching passages found ---
+            if passage_id == 1:
+                plate = str(self.plate)
+                p_hash = str(self.plate_hash)
+                raise OBOFileValidationError(
+                    "No Matching Passages Found",
+                    f"No passages were found in <b>{filename}</b> matching:<br><br>"
+                    f"&nbsp;&nbsp;• Plate: <b>{plate if plate else '(not provided)'}</b><br>"
+                    f"&nbsp;&nbsp;• Hash: <b>{p_hash if p_hash else '(not provided)'}</b><br><br>"
+                    f"Please check the plate number and hash are correct, and that this OBO file contains data for this vehicle."
+                )
         else:
             OBOFile = open(file)
             #Process Speed Spike
@@ -414,7 +484,7 @@ class linkValidation:
             percentDiff=0
             avSpeed=0
             gpsErrorPoints=0
-            MinSats=int(self.validationData.commissioningConfig['AverageSpeed']['min_sats'])
+            MinSats=int(float(self.validationData.commissioningConfig['AverageSpeed']['min_sats']))
 
             for gpsPoint in self.validationData.gpsData:
                 if gpsPoint['Time'] >= passage['FromTime'] and gpsPoint['Time'] <= passage['ToTime'] and int(gpsPoint['SatNumber']) >= MinSats:
@@ -460,7 +530,7 @@ class linkValidation:
         self.validationData = linkValData
         self.UI.updateAverageSpeedValidationPB.emit({"progress":0,"message":"Importing GPS File(s)"})
         self.UI.pbTotal=len(self.validationData.oboData*2)
-        MinSats=int(self.validationData.commissioningConfig['AverageSpeed']['min_sats'])
+        MinSats=int(float(self.validationData.commissioningConfig['AverageSpeed']['min_sats']))
 
         if self.validationData.saveFilename != "":
             f = open(self.validationData.saveFilename, "w")

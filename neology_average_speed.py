@@ -64,13 +64,15 @@ class SettingsDialog(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout()
 
-        form = QtWidgets.QFormLayout()
+        # GPS Settings
+        gps_group = QtWidgets.QGroupBox("GPS")
+        gps_form = QtWidgets.QFormLayout()
 
         self.spin_min_sats = QtWidgets.QSpinBox()
         self.spin_min_sats.setRange(0, 20)
-        self.spin_min_sats.setValue(int(config["AverageSpeed"]["min_sats"]))
-        self.spin_min_sats.setToolTip("Minimum number of GPS satellites required for a point to be included in speed calculations")
-        form.addRow("Min Satellites:", self.spin_min_sats)
+        self.spin_min_sats.setValue(int(float(config["AverageSpeed"]["min_sats"])))
+        self.spin_min_sats.setToolTip("Minimum number of GPS satellites required for a point to be included")
+        gps_form.addRow("Min Satellites:", self.spin_min_sats)
 
         self.spin_time_offset = QtWidgets.QDoubleSpinBox()
         self.spin_time_offset.setRange(-24, 24)
@@ -78,15 +80,64 @@ class SettingsDialog(QtWidgets.QDialog):
         self.spin_time_offset.setSingleStep(0.5)
         self.spin_time_offset.setValue(float(config["AverageSpeed"]["time_offset"]))
         self.spin_time_offset.setToolTip("Time offset in hours to apply to GPS timestamps")
-        form.addRow("Time Offset (hours):", self.spin_time_offset)
+        gps_form.addRow("Time Offset (hours):", self.spin_time_offset)
 
         self.spin_leap_seconds = QtWidgets.QSpinBox()
         self.spin_leap_seconds.setRange(0, 60)
-        self.spin_leap_seconds.setValue(int(config["AverageSpeed"]["leap_seconds"]))
-        self.spin_leap_seconds.setToolTip("GPS leap seconds to subtract from epoch time (currently 18)")
-        form.addRow("Leap Seconds:", self.spin_leap_seconds)
+        self.spin_leap_seconds.setValue(int(float(config["AverageSpeed"]["leap_seconds"])))
+        self.spin_leap_seconds.setToolTip("GPS leap seconds to subtract from epoch time")
+        gps_form.addRow("Leap Seconds:", self.spin_leap_seconds)
+        gps_group.setLayout(gps_form)
+        layout.addWidget(gps_group)
 
-        layout.addLayout(form)
+        # Validation Threshold Settings
+        val_group = QtWidgets.QGroupBox("Validation Thresholds")
+        val_form = QtWidgets.QFormLayout()
+
+        self.chk_pct_only = QtWidgets.QCheckBox("Percentage Only")
+        self.chk_pct_only.setChecked(config["AverageSpeed"].get("pct_only", "false").lower() == "true")
+        self.chk_pct_only.setToolTip("Use percentage thresholds for all speeds regardless of speed breakpoint")
+        self.chk_pct_only.stateChanged.connect(self._onPctOnlyChanged)
+        val_form.addRow("", self.chk_pct_only)
+
+        self.spin_speed_breakpoint = QtWidgets.QDoubleSpinBox()
+        self.spin_speed_breakpoint.setRange(0, 200)
+        self.spin_speed_breakpoint.setSuffix(" mph")
+        self.spin_speed_breakpoint.setValue(float(config["AverageSpeed"].get("speed_breakpoint", 62)))
+        self.spin_speed_breakpoint.setToolTip("Speed above which percentage tolerance is used instead of mph")
+        val_form.addRow("Speed Breakpoint:", self.spin_speed_breakpoint)
+
+        low_layout = QtWidgets.QHBoxLayout()
+        self.spin_threshold_low_pos = QtWidgets.QDoubleSpinBox()
+        self.spin_threshold_low_pos.setRange(0, 20); self.spin_threshold_low_pos.setSingleStep(0.5)
+        self.spin_threshold_low_pos.setValue(float(config["AverageSpeed"].get("threshold_low_pos", 3)))
+        self.spin_threshold_low_pos.setToolTip("Max mph above OBO speed (positive tolerance)")
+        self.spin_threshold_low_neg = QtWidgets.QDoubleSpinBox()
+        self.spin_threshold_low_neg.setRange(0, 20); self.spin_threshold_low_neg.setSingleStep(0.5)
+        self.spin_threshold_low_neg.setValue(float(config["AverageSpeed"].get("threshold_low_neg", 3)))
+        self.spin_threshold_low_neg.setToolTip("Max mph below OBO speed (negative tolerance)")
+        low_layout.addWidget(QtWidgets.QLabel("+")); low_layout.addWidget(self.spin_threshold_low_pos)
+        low_layout.addWidget(QtWidgets.QLabel("−")); low_layout.addWidget(self.spin_threshold_low_neg)
+        val_form.addRow("Low Speed Tolerance (mph):", low_layout)
+
+        high_layout = QtWidgets.QHBoxLayout()
+        self.spin_threshold_high_pos = QtWidgets.QDoubleSpinBox()
+        self.spin_threshold_high_pos.setRange(0, 20); self.spin_threshold_high_pos.setSingleStep(0.5)
+        self.spin_threshold_high_pos.setValue(float(config["AverageSpeed"].get("threshold_high_pos", 3)))
+        self.spin_threshold_high_pos.setToolTip("Max % above OBO speed (positive tolerance)")
+        self.spin_threshold_high_neg = QtWidgets.QDoubleSpinBox()
+        self.spin_threshold_high_neg.setRange(0, 20); self.spin_threshold_high_neg.setSingleStep(0.5)
+        self.spin_threshold_high_neg.setValue(float(config["AverageSpeed"].get("threshold_high_neg", 3)))
+        self.spin_threshold_high_neg.setToolTip("Max % below OBO speed (negative tolerance)")
+        high_layout.addWidget(QtWidgets.QLabel("+")); high_layout.addWidget(self.spin_threshold_high_pos)
+        high_layout.addWidget(QtWidgets.QLabel("−")); high_layout.addWidget(self.spin_threshold_high_neg)
+        val_form.addRow("High Speed Tolerance (%):", high_layout)
+
+        val_group.setLayout(val_form)
+        layout.addWidget(val_group)
+
+        # Apply initial enabled state
+        self._onPctOnlyChanged()
         layout.addSpacing(8)
 
         # Buttons
@@ -99,10 +150,22 @@ class SettingsDialog(QtWidgets.QDialog):
 
         self.setLayout(layout)
 
+    def _onPctOnlyChanged(self):
+        pct_only = self.chk_pct_only.isChecked()
+        self.spin_speed_breakpoint.setEnabled(not pct_only)
+        self.spin_threshold_low_pos.setEnabled(not pct_only)
+        self.spin_threshold_low_neg.setEnabled(not pct_only)
+
     def save(self):
-        self.config["AverageSpeed"]["min_sats"]    = str(self.spin_min_sats.value())
-        self.config["AverageSpeed"]["time_offset"]  = str(self.spin_time_offset.value())
-        self.config["AverageSpeed"]["leap_seconds"] = str(self.spin_leap_seconds.value())
+        self.config["AverageSpeed"]["min_sats"]           = str(self.spin_min_sats.value())
+        self.config["AverageSpeed"]["time_offset"]         = str(self.spin_time_offset.value())
+        self.config["AverageSpeed"]["leap_seconds"]        = str(self.spin_leap_seconds.value())
+        self.config["AverageSpeed"]["pct_only"]            = str(self.chk_pct_only.isChecked()).lower()
+        self.config["AverageSpeed"]["speed_breakpoint"]    = str(self.spin_speed_breakpoint.value())
+        self.config["AverageSpeed"]["threshold_low_pos"]   = str(self.spin_threshold_low_pos.value())
+        self.config["AverageSpeed"]["threshold_low_neg"]   = str(self.spin_threshold_low_neg.value())
+        self.config["AverageSpeed"]["threshold_high_pos"]  = str(self.spin_threshold_high_pos.value())
+        self.config["AverageSpeed"]["threshold_high_neg"]  = str(self.spin_threshold_high_neg.value())
         try:
             with open(self.config_path, "w") as f:
                 json.dump(self.config, f, indent=4)
@@ -157,9 +220,178 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.data=[]
 
+        # Tighten layout margins and spacing in code (uic doesn't support these in .ui files)
+        for name, margins, spacing in [
+            ('verticalLayout',              (0,0,0,0), 0),
+            ('verticalLayout_4',            (6,6,6,4), 4),
+            ('horizontalLayout_3',          (0,0,0,0), 4),
+            ('hl_compare',                  (6,4,6,4), 4),
+            ('hl_vehicle',                  (6,4,6,4), 4),
+            ('hl_export',                   (6,4,6,4), 4),
+            ('horizontalLayout_validation', (6,4,6,4), 6),
+        ]:
+            widget = self.findChild(QtWidgets.QLayout, name)
+            if widget:
+                widget.setContentsMargins(*margins)
+                widget.setSpacing(spacing)
+
         # Hide Baseline Measurement tab - uncomment to re-enable
         self.tabWidget = self.findChild(QtWidgets.QTabWidget, 'tabWidget')
         self.tabWidget.setTabVisible(0, False)
+
+        # Styling
+        self.setStyleSheet("""
+            QWidget {
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 9pt;
+            }
+            QGroupBox {
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+                margin-top: 8px;
+                padding: 4px 6px 4px 6px;
+                background: transparent;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 6px;
+                color: #555;
+                font-size: 8pt;
+            }
+            QPushButton {
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 2px 8px;
+                background-color: #ffffff;
+                color: #333;
+                min-height: 20px;
+                font-size: 8.5pt;
+            }
+            QPushButton:hover {
+                background-color: #f0f7ff;
+                border-color: #aac4e0;
+            }
+            QPushButton:pressed {
+                background-color: #dceeff;
+            }
+            QPushButton:disabled {
+                color: #bbb;
+                border-color: #e5e5e5;
+                background-color: #fafafa;
+            }
+            QPushButton#btn_file_check, QPushButton#btn_wizard {
+                background-color: #0078d4;
+                border-color: #0067b8;
+                color: #fff;
+                font-weight: 600;
+            }
+            QPushButton#btn_file_check:hover, QPushButton#btn_wizard:hover {
+                background-color: #106ebe;
+            }
+            QPushButton#btn_file_check:disabled, QPushButton#btn_wizard:disabled {
+                background-color: #cce4f7;
+                border-color: #cce4f7;
+                color: #fff;
+            }
+            QProgressBar {
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                text-align: center;
+                background-color: #f5f5f5;
+                height: 16px;
+                font-size: 8pt;
+                color: #333;
+            }
+            QProgressBar::chunk {
+                background-color: #0078d4;
+                border-radius: 3px;
+            }
+            QTableView {
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                gridline-color: #f0f0f0;
+                selection-background-color: #cce4f7;
+                selection-color: #333;
+                alternate-background-color: #fafcff;
+            }
+            QHeaderView::section {
+                background-color: #f5f5f5;
+                border: none;
+                border-right: 1px solid #e0e0e0;
+                border-bottom: 1px solid #e0e0e0;
+                padding: 4px 8px;
+                font-weight: 600;
+                color: #444;
+            }
+            QTabWidget::pane {
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                top: -1px;
+            }
+            QTabBar::tab {
+                background: #f5f5f5;
+                border: 1px solid #e0e0e0;
+                border-bottom: none;
+                padding: 5px 16px;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                color: #666;
+                margin-right: 2px;
+                min-width: 140px;
+            }
+            QTabBar::tab:selected {
+                background: #fff;
+                color: #0078d4;
+                font-weight: 600;
+                border-bottom: 2px solid #0078d4;
+            }
+            QLineEdit {
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 3px 6px;
+                background: #fff;
+                selection-background-color: #cce4f7;
+            }
+            QLineEdit:focus {
+                border-color: #0078d4;
+            }
+            QDoubleSpinBox, QSpinBox {
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 2px 4px;
+                background: #fff;
+            }
+            QDoubleSpinBox:focus, QSpinBox:focus {
+                border-color: #0078d4;
+            }
+            QComboBox {
+                border: 1px solid #d0d0d0;
+                border-radius: 4px;
+                padding: 3px 6px;
+                background: #fff;
+            }
+            QCheckBox {
+                spacing: 6px;
+                color: #333;
+            }
+            QCheckBox::indicator {
+                width: 14px;
+                height: 14px;
+                border: 1px solid #d0d0d0;
+                border-radius: 3px;
+                background: #fff;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #0078d4;
+                border-color: #0078d4;
+            }
+            QFrame[frameShape="5"] {
+                color: #d0d0d0;
+                max-width: 1px;
+                margin: 2px 6px;
+            }
+        """)
 
         #Average Speed Tab
         self.btn_file_check = self.findChild(QtWidgets.QPushButton,'btn_file_check')
@@ -190,20 +422,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_settings = self.findChild(QtWidgets.QPushButton, 'btn_settings')
         self.btn_settings.clicked.connect(self.btnSettingsPressed)
 
-        self.chk_validation_enabled  = self.findChild(QtWidgets.QCheckBox, 'chk_validation_enabled')
-        self.chk_pct_only            = self.findChild(QtWidgets.QCheckBox, 'chk_pct_only')
-        self.spin_speed_breakpoint   = self.findChild(QtWidgets.QDoubleSpinBox, 'spin_speed_breakpoint')
-        self.spin_threshold_low_pos  = self.findChild(QtWidgets.QDoubleSpinBox, 'spin_threshold_low_pos')
-        self.spin_threshold_low_neg  = self.findChild(QtWidgets.QDoubleSpinBox, 'spin_threshold_low_neg')
-        self.spin_threshold_high_pos = self.findChild(QtWidgets.QDoubleSpinBox, 'spin_threshold_high_pos')
-        self.spin_threshold_high_neg = self.findChild(QtWidgets.QDoubleSpinBox, 'spin_threshold_high_neg')
+        self.chk_validation_enabled = self.findChild(QtWidgets.QCheckBox, 'chk_validation_enabled')
         self.chk_validation_enabled.stateChanged.connect(self.onValidationEnabledChanged)
-        self.chk_pct_only.stateChanged.connect(self.onPctOnlyChanged)
-        self.spin_speed_breakpoint.valueChanged.connect(self.recolourValidationTable)
-        self.spin_threshold_low_pos.valueChanged.connect(self.recolourValidationTable)
-        self.spin_threshold_low_neg.valueChanged.connect(self.recolourValidationTable)
-        self.spin_threshold_high_pos.valueChanged.connect(self.recolourValidationTable)
-        self.spin_threshold_high_neg.valueChanged.connect(self.recolourValidationTable)
 
         self.btn_save_kml.setEnabled(False)
         self.btn_export_validation_data.setEnabled(False)
@@ -330,10 +550,10 @@ class MainWindow(QtWidgets.QMainWindow):
     def btnSettingsPressed(self):
         dlg = SettingsDialog(self.commissioningConfig, f"{resourcesPath}/neology_average_speed.json", self)
         if dlg.exec_() == QtWidgets.QDialog.Accepted:
-            # Reload config so any running comparison picks up new values
             try:
                 with open(f"{resourcesPath}/neology_average_speed.json") as c:
                     self.commissioningConfig = json.load(c)
+                self.recolourValidationTable()
             except Exception as e:
                 self.showErrorMessagebox("Settings Error", f"Could not reload settings: {str(e)}")
 
@@ -468,24 +688,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tableValidation.setModel(self.proxy_model)
             tableValidationHeader=self.tableValidation.horizontalHeader()
             tableValidationHeader.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+            tableValidationHeader.resizeSections(QtWidgets.QHeaderView.ResizeToContents)
             tableValidationHeader.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
             self.recolourValidationTable()
 
     def setValidationControlsEnabled(self, enabled):
-        pct_only = self.chk_pct_only.isChecked()
-        self.chk_pct_only.setEnabled(enabled)
-        self.spin_threshold_high_pos.setEnabled(enabled)
-        self.spin_threshold_high_neg.setEnabled(enabled)
-        self.spin_speed_breakpoint.setEnabled(enabled and not pct_only)
-        self.spin_threshold_low_pos.setEnabled(enabled and not pct_only)
-        self.spin_threshold_low_neg.setEnabled(enabled and not pct_only)
+        pass
 
     def onValidationEnabledChanged(self):
-        self.setValidationControlsEnabled(self.chk_validation_enabled.isChecked())
-        self.recolourValidationTable()
-
-    def onPctOnlyChanged(self):
-        # Grey out the speed breakpoint and low speed controls when pct-only is active
         self.setValidationControlsEnabled(self.chk_validation_enabled.isChecked())
         self.recolourValidationTable()
 
@@ -501,11 +711,13 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.model.change_color(row, col, None)
             return
 
-        low_pos_mph        = self.spin_threshold_low_pos.value()
-        low_neg_mph        = self.spin_threshold_low_neg.value()
-        high_pos_pct       = self.spin_threshold_high_pos.value()
-        high_neg_pct       = self.spin_threshold_high_neg.value()
-        speed_breakpoint   = self.spin_speed_breakpoint.value()
+        cfg = self.commissioningConfig["AverageSpeed"]
+        low_pos_mph      = float(cfg.get("threshold_low_pos",  3))
+        low_neg_mph      = float(cfg.get("threshold_low_neg",  3))
+        high_pos_pct     = float(cfg.get("threshold_high_pos", 3))
+        high_neg_pct     = float(cfg.get("threshold_high_neg", 3))
+        speed_breakpoint = float(cfg.get("speed_breakpoint",  62))
+        pct_only         = cfg.get("pct_only", "false").lower() == "true"
 
         GREEN = QColor(144, 238, 144)
         RED   = QColor(255, 102, 102)
@@ -516,7 +728,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 mph_diff   = float(self.model._data[row][13])   # Vbox/Pri Speed MPH Diff
                 pct_diff   = float(self.model._data[row][12])   # Vbox/Pri Speed % Diff
 
-                if self.chk_pct_only.isChecked():
+                if pct_only:
                     passed = (-high_neg_pct <= pct_diff <= high_pos_pct)
                 elif pri_speed <= speed_breakpoint:
                     # mph_diff = vbox - obo, so positive means vbox is faster
@@ -551,12 +763,13 @@ class MainWindow(QtWidgets.QMainWindow):
                     total  = len(self.linkValidationData.validationResultData)
                     passed = 0
                     failed = 0
-                    bp     = self.spin_speed_breakpoint.value()
-                    lp     = self.spin_threshold_low_pos.value()
-                    ln     = self.spin_threshold_low_neg.value()
-                    hp     = self.spin_threshold_high_pos.value()
-                    hn     = self.spin_threshold_high_neg.value()
-                    pct_only = self.chk_pct_only.isChecked()
+                    cfg = self.commissioningConfig["AverageSpeed"]
+                    bp  = float(cfg.get("speed_breakpoint",  62))
+                    lp  = float(cfg.get("threshold_low_pos",  3))
+                    ln  = float(cfg.get("threshold_low_neg",  3))
+                    hp  = float(cfg.get("threshold_high_pos", 3))
+                    hn  = float(cfg.get("threshold_high_neg", 3))
+                    pct_only = self.commissioningConfig["AverageSpeed"].get("pct_only", "false").lower() == "true"
                     val_on   = self.chk_validation_enabled.isChecked()
                     for row in self.linkValidationData.validationResultData:
                         try:
@@ -574,7 +787,7 @@ class MainWindow(QtWidgets.QMainWindow):
                         except (ValueError, TypeError, IndexError):
                             passed += 1
                     failed = total - passed
-                    self._wizard.show_results(total, passed, failed)
+                    self._wizard.show_results(total, passed, failed, self.commissioningConfig)
                     self._wizard.mark_complete()
                     self._wizard.show()
 
@@ -585,6 +798,15 @@ class MainWindow(QtWidgets.QMainWindow):
             self.btn_export_validation_data.setEnabled(False)
             self.showErrorMessagebox(result['Title'], result['Text'])
 
+
+    def showRichErrorMessagebox(self, title, maintext):
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle(title)
+        msg.setTextFormat(Qt.RichText)
+        msg.setText(maintext)
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
 
     def showInfoMessagebox(self,title, maintext):
         msg = QMessageBox()
