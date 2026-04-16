@@ -142,14 +142,14 @@
           <item>
            <widget class="QPushButton" name="btn_save_kml">
             <property name="text">
-             <string>Save KML</string>
+             <string>Export KML</string>
             </property>
            </widget>
           </item>
           <item>
            <widget class="QPushButton" name="btn_export_validation_data">
             <property name="text">
-             <string>Export</string>
+             <string>Export CSV</string>
             </property>
            </widget>
           </item>

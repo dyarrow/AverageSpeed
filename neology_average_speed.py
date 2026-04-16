@@ -157,6 +157,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.data=[]
 
+        # Hide Baseline Measurement tab - uncomment to re-enable
+        self.tabWidget = self.findChild(QtWidgets.QTabWidget, 'tabWidget')
+        self.tabWidget.setTabVisible(0, False)
+
         #Average Speed Tab
         self.btn_file_check = self.findChild(QtWidgets.QPushButton,'btn_file_check')
         self.btn_file_check.clicked.connect(self.btn_file_checkPressed)
@@ -318,6 +322,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.section_data_objects != None:
             for section in self.section_data_objects:
                 self.section_data_objects[section].export_filtered_vbo(f"{saveFolder}/{self.section_data_objects[section].uid}.vbo")
+            self._offer_open(saveFolder)
 
 #endregion
 
@@ -389,14 +394,37 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
 
+    def _offer_open(self, filepath):
+        reply = QtWidgets.QMessageBox.question(
+            self, "Open File",
+            f"File saved successfully.\nWould you like to open it?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.Yes
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            import subprocess, sys
+            if sys.platform == "win32":
+                os.startfile(filepath)
+            elif sys.platform == "darwin":
+                subprocess.call(["open", filepath])
+            else:
+                subprocess.call(["xdg-open", filepath])
+
     def btn_save_kmlPressed(self):
-        saveFilename, check = QFileDialog.getSaveFileName(None,"Save Google Earth KML File:","","Google Earth (*.kml);;All Files (*.*)",)
+        saveFilename, check = QFileDialog.getSaveFileName(None,"Export Google Earth KML File:","","Google Earth (*.kml);;All Files (*.*)",)
         if not check: return
 
+        self._kml_save_filename = saveFilename
         self.AverageSpeedLinkValidationSaveKML=AverageSpeedLinkValidationSaveKML(saveFilename,self.linkValidationData,self.commissioningConfig)
         self.AverageSpeedLinkValidationSaveKML.updateAverageSpeedValidationPB.connect(self.updateAverageSpeedValidationPB)
-        self.AverageSpeedLinkValidationSaveKML.validationThreadFinished.connect(self.validationThreadFinished)
+        self.AverageSpeedLinkValidationSaveKML.validationThreadFinished.connect(self.kmlThreadFinished)
         self.AverageSpeedLinkValidationSaveKML.start()
+
+    def kmlThreadFinished(self, result):
+        if result['Result']:
+            self._offer_open(self._kml_save_filename)
+        else:
+            self.showErrorMessagebox(result['Title'], result['Text'])
 
     def export_validation_data(self):
         saveFilename, check = QFileDialog.getSaveFileName(None,"Save Comparison Data:","","CSV (*.csv);;All Files (*.*)",)
@@ -414,6 +442,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for row in self.linkValidationData.validationResultData:
             ws.append(row)
         wb.save(f"{saveFilename}.xlsx")
+        self._offer_open(saveFilename)
 
 
     def export_vbox_cut_data(self):
@@ -424,6 +453,7 @@ class MainWindow(QtWidgets.QMainWindow):
             f.write("PassageID,Sats,Time,Speed,Lat,Long\n")
             for row in self.linkValidationData.vboxCutData:
                 f.write(",".join(str(v) for v in row) + "\n")
+        self._offer_open(saveFilename)
 
     def updateValidationTable(self, linkValidationData):
         self.linkValidationData=linkValidationData
