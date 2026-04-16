@@ -54,6 +54,64 @@ class ProgressDelegate(QtWidgets.QStyledItemDelegate):
 
 
 
+class SettingsDialog(QtWidgets.QDialog):
+    def __init__(self, config, config_path, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setMinimumWidth(350)
+        self.config = config
+        self.config_path = config_path
+
+        layout = QtWidgets.QVBoxLayout()
+
+        form = QtWidgets.QFormLayout()
+
+        self.spin_min_sats = QtWidgets.QSpinBox()
+        self.spin_min_sats.setRange(0, 20)
+        self.spin_min_sats.setValue(int(config["AverageSpeed"]["min_sats"]))
+        self.spin_min_sats.setToolTip("Minimum number of GPS satellites required for a point to be included in speed calculations")
+        form.addRow("Min Satellites:", self.spin_min_sats)
+
+        self.spin_time_offset = QtWidgets.QDoubleSpinBox()
+        self.spin_time_offset.setRange(-24, 24)
+        self.spin_time_offset.setDecimals(1)
+        self.spin_time_offset.setSingleStep(0.5)
+        self.spin_time_offset.setValue(float(config["AverageSpeed"]["time_offset"]))
+        self.spin_time_offset.setToolTip("Time offset in hours to apply to GPS timestamps")
+        form.addRow("Time Offset (hours):", self.spin_time_offset)
+
+        self.spin_leap_seconds = QtWidgets.QSpinBox()
+        self.spin_leap_seconds.setRange(0, 60)
+        self.spin_leap_seconds.setValue(int(config["AverageSpeed"]["leap_seconds"]))
+        self.spin_leap_seconds.setToolTip("GPS leap seconds to subtract from epoch time (currently 18)")
+        form.addRow("Leap Seconds:", self.spin_leap_seconds)
+
+        layout.addLayout(form)
+        layout.addSpacing(8)
+
+        # Buttons
+        btn_box = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Save | QtWidgets.QDialogButtonBox.Cancel
+        )
+        btn_box.accepted.connect(self.save)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+        self.setLayout(layout)
+
+    def save(self):
+        self.config["AverageSpeed"]["min_sats"]    = str(self.spin_min_sats.value())
+        self.config["AverageSpeed"]["time_offset"]  = str(self.spin_time_offset.value())
+        self.config["AverageSpeed"]["leap_seconds"] = str(self.spin_leap_seconds.value())
+        try:
+            with open(self.config_path, "w") as f:
+                json.dump(self.config, f, indent=4)
+            self.accept()
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, "Save Failed",
+                f"Could not save settings:\n{str(e)}")
+
+
 #Plugin UI Class
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
@@ -125,6 +183,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_import_config_file = self.findChild(QtWidgets.QPushButton,'btn_import_config_file')
         self.btn_import_config_file.clicked.connect(self.btnImportConfigFilePressed)
         self.btn_import_config_file.setVisible(False)
+        self.btn_settings = self.findChild(QtWidgets.QPushButton, 'btn_settings')
+        self.btn_settings.clicked.connect(self.btnSettingsPressed)
 
         self.chk_validation_enabled  = self.findChild(QtWidgets.QCheckBox, 'chk_validation_enabled')
         self.chk_pct_only            = self.findChild(QtWidgets.QCheckBox, 'chk_pct_only')
@@ -192,8 +252,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tbl_view_section_data.setModel(self.tbl_view_section_data_proxy)
             self.tbl_view_section_data.setSortingEnabled(True)
             
-            for x in range(0,len(headers)-1):
-                self.tbl_view_section_data_proxy_header.setSectionResizeMode(x, QtWidgets.QHeaderView.ResizeToContents)
+            self.tbl_view_section_data_proxy_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+            self.tbl_view_section_data_proxy_header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
         except Exception as e:
             print(e)
             self.showErrorMessagebox("Section Import Error","Failed to import section data, please check format of excel spreadsheet")
@@ -248,8 +308,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tbl_view_gps_data.setModel(self.tbl_view_gps_data_proxy)
         self.tbl_view_gps_data.setSortingEnabled(True)
         
-        for x in range(0,len(self.gps_data_headers)-1):
-            self.tbl_view_gps_data_proxy_header.setSectionResizeMode(x, QtWidgets.QHeaderView.ResizeToContents)
+        self.tbl_view_gps_data_proxy_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        self.tbl_view_gps_data_proxy_header.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
 
     def export_multiple(self):
         saveFolder = QtWidgets.QFileDialog.getExistingDirectory(self, 'Select Folder')
@@ -262,6 +322,16 @@ class MainWindow(QtWidgets.QMainWindow):
 #endregion
 
 #region Link Validation
+    def btnSettingsPressed(self):
+        dlg = SettingsDialog(self.commissioningConfig, f"{resourcesPath}/neology_average_speed.json", self)
+        if dlg.exec_() == QtWidgets.QDialog.Accepted:
+            # Reload config so any running comparison picks up new values
+            try:
+                with open(f"{resourcesPath}/neology_average_speed.json") as c:
+                    self.commissioningConfig = json.load(c)
+            except Exception as e:
+                self.showErrorMessagebox("Settings Error", f"Could not reload settings: {str(e)}")
+
     def btnImportConfigFilePressed(self):
         xmlFilename, check = QFileDialog.getOpenFileName(None,"Select AverageSpeed EWA Config File:","","XML File (*.xml);;All Files (*.*)",)
         if not check: return
@@ -367,8 +437,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.proxy_model.sort(0, Qt.AscendingOrder)
             self.tableValidation.setModel(self.proxy_model)
             tableValidationHeader=self.tableValidation.horizontalHeader()
-            for x in range(0,len(self.validation_headers)-1):
-                tableValidationHeader.setSectionResizeMode(x, QtWidgets.QHeaderView.ResizeToContents)
+            tableValidationHeader.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+            tableValidationHeader.setSectionResizeMode(QtWidgets.QHeaderView.Interactive)
             self.recolourValidationTable()
 
     def setValidationControlsEnabled(self, enabled):
