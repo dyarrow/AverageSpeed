@@ -313,11 +313,11 @@ class ValidationProxyModel(QSortFilterProxyModel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._filters = {}   # {col_index: str}
+        self._filters = {}   # {col_index: set of accepted values, or str for text search}
 
-    def set_filter(self, col, text):
-        if text:
-            self._filters[col] = text.lower()
+    def set_filter(self, col, value):
+        if value:
+            self._filters[col] = value
         elif col in self._filters:
             del self._filters[col]
         self.invalidateFilter()
@@ -336,81 +336,115 @@ class ValidationProxyModel(QSortFilterProxyModel):
         return col in self._filters and bool(self._filters[col])
 
     def filterAcceptsRow(self, source_row, source_parent):
-        for col, text in self._filters.items():
+        for col, value in self._filters.items():
             idx = self.sourceModel().index(source_row, col, source_parent)
-            cell = str(self.sourceModel().data(idx) or "").lower()
-            if text not in cell:
-                return False
+            cell = str(self.sourceModel().data(idx) or "")
+            if isinstance(value, set):
+                if cell not in value:
+                    return False
+            else:
+                if value.lower() not in cell.lower():
+                    return False
         return True
 
 
 class ColumnFilterDialog(QDialog):
-    """Small dropdown-style dialog for filtering a single column."""
+    """Checkbox list filter dialog — tick values to include, search narrows the visible list."""
 
     def __init__(self, col, header_name, proxy_model, unique_values, parent=None):
         super().__init__(parent)
         self.col = col
         self.proxy = proxy_model
         self.setWindowTitle(f"Filter — {header_name}")
-        self.setMinimumWidth(260)
-        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        self.setMinimumWidth(280)
+        self.setMinimumHeight(300)
+        self.setWindowFlags(Qt.Tool | Qt.WindowTitleHint | Qt.WindowCloseButtonHint)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
-        # Search box
+        # Search box — narrows visible list only, does not change check state
         self.line_search = QLineEdit()
-        self.line_search.setPlaceholderText("Type to filter…")
-        self.line_search.setText(proxy_model.get_filter(col))
+        self.line_search.setPlaceholderText("Type to filter list…")
         self.line_search.textChanged.connect(self._on_search_changed)
         layout.addWidget(self.line_search)
 
-        # Unique value list
+        # Checkbox list
         self.value_list = QListWidget()
         self.value_list.setSelectionMode(QAbstractItemView.NoSelection)
-        self.value_list.setMaximumHeight(180)
+        self.value_list.setMinimumHeight(200)
         self._all_values = sorted(set(str(v) for v in unique_values if v is not None))
-        self._populate_list(self._all_values)
-        self.value_list.itemClicked.connect(self._on_value_clicked)
+
+        # Restore previously checked values from proxy
+        current_filter = proxy_model.get_filter(col)  # set of checked values or ""
+        if isinstance(current_filter, set):
+            self._checked = set(current_filter)
+        elif current_filter:
+            self._checked = {current_filter}
+        else:
+            self._checked = set()
+
+        self._build_list(self._all_values)
+        self.value_list.itemChanged.connect(self._on_item_changed)
         layout.addWidget(self.value_list)
 
         # Buttons
         btn_layout = QHBoxLayout()
-        self.btn_clear = QPushButton("Clear Filter")
-        self.btn_clear.clicked.connect(self._clear)
+        self.btn_all   = QPushButton("Select All")
+        self.btn_none  = QPushButton("Clear")
         self.btn_close = QPushButton("Close")
+        self.btn_all.clicked.connect(self._select_all)
+        self.btn_none.clicked.connect(self._clear)
         self.btn_close.clicked.connect(self.accept)
-        btn_layout.addWidget(self.btn_clear)
+        btn_layout.addWidget(self.btn_all)
+        btn_layout.addWidget(self.btn_none)
         btn_layout.addStretch()
         btn_layout.addWidget(self.btn_close)
         layout.addLayout(btn_layout)
 
         self.line_search.setFocus()
 
-    def _populate_list(self, values):
+    def _build_list(self, values):
+        self.value_list.blockSignals(True)
         self.value_list.clear()
-        current = self.proxy.get_filter(self.col)
         for v in values:
             item = QListWidgetItem(v)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Checked if v.lower() == current else Qt.Unchecked)
+            item.setCheckState(Qt.Checked if v in self._checked else Qt.Unchecked)
             self.value_list.addItem(item)
+        self.value_list.blockSignals(False)
 
     def _on_search_changed(self, text):
-        self.proxy.set_filter(self.col, text)
-        # Filter the list display too
-        filtered = [v for v in self._all_values if text.lower() in v.lower()]
-        self._populate_list(filtered)
+        # Only hide/show rows — do not change check state
+        text = text.lower()
+        for i in range(self.value_list.count()):
+            item = self.value_list.item(i)
+            item.setHidden(text != "" and text not in item.text().lower())
 
-    def _on_value_clicked(self, item):
-        # Clicking a value sets it as the exact filter
-        self.line_search.setText(item.text())
+    def _on_item_changed(self, item):
+        if item.checkState() == Qt.Checked:
+            self._checked.add(item.text())
+        else:
+            self._checked.discard(item.text())
+        # Apply filter immediately — empty set means no filter (show all)
+        self.proxy.set_filter(self.col, self._checked if self._checked else "")
+
+    def _select_all(self):
+        self.value_list.blockSignals(True)
+        for i in range(self.value_list.count()):
+            self.value_list.item(i).setCheckState(Qt.Checked)
+        self.value_list.blockSignals(False)
+        self._checked = set(self._all_values)
+        self.proxy.set_filter(self.col, "")  # all selected = no filter
 
     def _clear(self):
-        self.line_search.clear()
-        self.proxy.clear_filter(self.col)
-        self._populate_list(self._all_values)
+        self.value_list.blockSignals(True)
+        for i in range(self.value_list.count()):
+            self.value_list.item(i).setCheckState(Qt.Unchecked)
+        self.value_list.blockSignals(False)
+        self._checked.clear()
+        self.proxy.set_filter(self.col, "")
 
 
 class FilterHeaderView(QHeaderView):
