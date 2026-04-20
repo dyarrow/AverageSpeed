@@ -194,6 +194,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._build_ui()
 
+        # Restore validation enabled state from config
+        val_enabled = self.commissioningConfig.get("AverageSpeed", {}).get("validation_enabled", "false").lower() == "true"
+        self.chk_validation_enabled.setChecked(val_enabled)
+
         # ── Proxy models for Baseline Measurement tab ──────────────────────
         self.tbl_view_section_data_proxy = CustomProxyModel()
         self.tbl_view_section_data_proxy_header = self.tbl_view_section_data.horizontalHeader()
@@ -897,6 +901,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._obo_filenames  = OBODataFilenames
         self._group_index    = 0
         self._total_groups   = len(vrm_groups)
+        self.linkValidationData = None  # clear previous results
+        self._last_progress  = 0       # prevent progress bar going backwards
+
+        # Clear status bar until new results arrive
+        self._sb_passages.setText("Running...")
+        self._sb_passed.setText("")
+        self._sb_failed.setText("")
+        self._sb_passed.setStyleSheet("padding: 0 6px;")
+        self._sb_failed.setStyleSheet("padding: 0 6px;")
 
         self._progress_dialog = None
         if not (hasattr(self, '_wizard') and self._wizard is not None):
@@ -926,18 +939,42 @@ class MainWindow(QtWidgets.QMainWindow):
         self.AverageSpeedValidationManualCheckCompare.updateAverageSpeedValidationPB.connect(self._on_group_progress)
         self.AverageSpeedValidationManualCheckCompare.updateValidationTable.connect(self.updateValidationTable)
         self.AverageSpeedValidationManualCheckCompare.validationThreadFinished.connect(self._on_group_finished)
-        if hasattr(self, '_wizard') and self._wizard is not None:
-            self.AverageSpeedValidationManualCheckCompare.updateAverageSpeedValidationPB.connect(self._onWizardProgress)
         self.AverageSpeedValidationManualCheckCompare.start()
 
     def _on_group_progress(self, str_val):
-        group_pct  = str_val.get('progress', 0)
-        slice_size = 95 / max(self._total_groups, 1)
-        overall    = int(self._group_index * slice_size + group_pct * slice_size / 100)
-        msg        = str_val.get('message', '')
+        if self._group_index >= self._total_groups:
+            return
+        msg       = str_val.get('message', '')
+        group     = self._pending_groups[self._group_index]
+        vrm_label = group.get('plate') or group.get('plate_hash') or f"Group {self._group_index + 1}"
+
+        # Each group owns an equal band of 0–95%
+        # Within the band: GPS=25%, OBO=65%, Calculating=90%
+        band      = 95.0 / self._total_groups
+        band_start = self._group_index * band
+        msg_lower = msg.lower()
+        if 'gps' in msg_lower:
+            within = 0.25
+        elif 'ercu' in msg_lower or 'obo' in msg_lower:
+            within = 0.65
+        elif 'calculat' in msg_lower:
+            within = 0.90
+        else:
+            within = 0.10
+
+        overall = int(band_start + within * band)
+        overall = max(overall, self._last_progress)
+        self._last_progress = overall
+
         if self._total_groups > 1:
-            msg = f"[{self._group_index + 1}/{self._total_groups}] {msg}"
-        self.updateAverageSpeedValidationPB({'progress': overall, 'message': msg})
+            label = f"[{self._group_index + 1}/{self._total_groups}] [{vrm_label}] {msg}"
+        else:
+            label = f"[{vrm_label}] {msg}"
+
+        scaled = {'progress': overall, 'message': label}
+        self.updateAverageSpeedValidationPB(scaled)
+        if hasattr(self, '_wizard') and self._wizard is not None:
+            self._onWizardProgress(scaled)
 
     def _on_group_finished(self, result):
         if result['Result']:
@@ -1011,11 +1048,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self._offer_open(saveFilename)
 
     def updateValidationTable(self, linkValidationData):
-        self.linkValidationData=linkValidationData
+        # Accumulate results across VRM groups — don't replace, append
+        if not hasattr(self, 'linkValidationData') or self.linkValidationData is None or self._group_index == 0:
+            self.linkValidationData = linkValidationData
+        else:
+            self.linkValidationData.validationResultData.extend(linkValidationData.validationResultData)
+            self.linkValidationData.ercuData.extend(linkValidationData.ercuData)
+            self.linkValidationData.gpsData.extend(linkValidationData.gpsData)
 
         if len(self.linkValidationData.validationResultData):
-
-            self.model = CustomTableModel(self.linkValidationData.validationResultData,self.validation_headers)
+            self.model = CustomTableModel(self.linkValidationData.validationResultData, self.validation_headers)
             self.proxy_model = ValidationProxyModel()
             self.proxy_model.setSourceModel(self.model)
             self.proxy_model.sort(0, Qt.AscendingOrder)
@@ -1031,6 +1073,15 @@ class MainWindow(QtWidgets.QMainWindow):
     def onValidationEnabledChanged(self):
         self.setValidationControlsEnabled(self.chk_validation_enabled.isChecked())
         self.recolourValidationTable()
+        # Persist state to config
+        self.commissioningConfig.setdefault("AverageSpeed", {})["validation_enabled"] = \
+            "true" if self.chk_validation_enabled.isChecked() else "false"
+        try:
+            import json
+            with open(f"{resourcesPath}/neology_average_speed.json", "w") as f:
+                json.dump(self.commissioningConfig, f, indent=4)
+        except Exception:
+            pass
 
     def recolourValidationTable(self):
         # Vbox/Pri Speed % Diff is col 12, Vbox/Pri Speed MPH Diff is col 13

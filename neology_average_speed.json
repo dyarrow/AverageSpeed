@@ -8,6 +8,7 @@
         "threshold_low_pos": "3.0",
         "threshold_low_neg": "3.0",
         "threshold_high_pos": "3.0",
-        "threshold_high_neg": "3.0"
+        "threshold_high_neg": "3.0",
+        "validation_enabled": "true"
     }
 }
