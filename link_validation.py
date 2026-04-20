@@ -18,14 +18,6 @@ from build_config import resourcesPath
 from build_config import applicationPath
 
 
-class OBOFileValidationError(Exception):
-    """Raised when an OBO file fails validation with a user-friendly message."""
-    def __init__(self, title, message):
-        super().__init__(message)
-        self.title = title
-        self.message = message
-
-
 class WSDOTInputData:
     ENTRY_PRI_TIME="Entry Primary Time"
     ENTRY_SEC_TIME="Entry Secondary Time"
@@ -42,13 +34,11 @@ class linkValidationData:
     def __init__(self):
         super().__init__()
         self.gpsFilenames = ""
-        self.oboFilenames = ""
+        self.ercuFilenames = ""
         self.gpsData = []
-        self.oboData=[]
-        self.oboRawDataFile=[]
-        self.oboRawRows=[]      # raw parsed rows before VRM filtering
+        self.ercuData=[]
+        self.ercuRawDataFile=[]
         self.validationResultData=[]
-        self.vboxCutData=[]
         self.instationIP=""
         self.username=""
         self.password=""
@@ -64,47 +54,23 @@ class AverageSpeedLinkValidationManualComparison(QtCore.QThread):
     validationThreadFinished = QtCore.pyqtSignal(dict)
     updateAverageSpeedValidationPB = QtCore.pyqtSignal(dict)
         
-    def __init__(self, OBODataFilenames, commissioningConfig, vrm_groups):
-        """vrm_groups: list of {plate, plate_hash, gps_files} dicts"""
+    def __init__(self,GPSFilenames,ERCUDataFilenames,commissioningConfig, plate, plate_hash):
         super(QtCore.QThread,self).__init__()
         self.linkValData = linkValidationData()
-        self.linkValData.oboFilenames=OBODataFilenames
+        self.linkValData.gpsFilenames=GPSFilenames
+        self.linkValData.ercuFilenames=ERCUDataFilenames
+        self.pbTotal=len(GPSFilenames)+len(ERCUDataFilenames)+1
         self.linkValData.commissioningConfig=commissioningConfig
-        self.vrm_groups=vrm_groups
-        total_files = sum(len(g["gps_files"]) for g in vrm_groups)
-        self.pbTotal=total_files+len(OBODataFilenames)+1
+        self.plate=str(plate)
+        self.plate_hash=str(plate_hash)
 
     def run(self):
         try:
-            n = len(self.vrm_groups)
             linkVal = linkValidation(self)
-            # Give each group an equal slice of 0-95% (last 5% for finalising)
-            for i, grp in enumerate(self.vrm_groups):
-                vrm_label    = grp["plate"] or grp["plate_hash"] or f"Group {i+1}"
-                group_prefix = f"[{vrm_label}] "
-                start_pct    = int((i / n) * 95)
-                end_pct      = int(((i + 1) / n) * 95)
-                # Subdivide group slice: 40% GPS import, 20% OBO import/filter, 40% comparison
-                self._pct_start  = start_pct
-                self._pct_range  = end_pct - start_pct
-                self.updateAverageSpeedValidationPB.emit({
-                    "progress": start_pct,
-                    "message":  f"{group_prefix}Starting... ({i+1}/{n})"
-                })
-                self.linkValData.gpsFilenames = grp["gps_files"]
-                self.linkValData.gpsData = []
-                linkVal.vrm_prefix = group_prefix
-                self.linkValData = linkVal.manualComparison(
-                    self.linkValData,
-                    grp["plate"],
-                    grp["plate_hash"]
-                )
+            self.linkValData=linkVal.manualComparison(self.linkValData,self.plate, self.plate_hash)
             self.updateValidationTable.emit(self.linkValData)
             self.validationThreadFinished.emit({"Result":True, "Title":"Validation Complete", "Text":"Manual validation comparison is complete."})
             self.updateAverageSpeedValidationPB.emit({"progress":100,"message":"Completed Successfully"})
-        except OBOFileValidationError as e:
-            self.validationThreadFinished.emit({"Result":False, "Title":e.title, "Text":e.message, "DisplayMessage":True, "RichText":True})
-            self.updateAverageSpeedValidationPB.emit({"progress":0,"message":"Failed"})
         except Exception as e:
             self.validationThreadFinished.emit({"Result":False, "Title":"Validation Failed", "Text":str(e), "DisplayMessage":True})
             self.updateAverageSpeedValidationPB.emit({"progress":0,"message":""})
@@ -136,51 +102,44 @@ class linkValidation:
         self.validationData=linkValidationData()
         self.UI=UI
         self.pbProgress=0
-        self.vrm_prefix=""
 
     def manualComparison(self,linkValData,plate, plate_hash):
-        #Do link validation comparison between GPS and OBO files
+        #Do link validation comparison between GPS and ERCU files
         self.validationData = linkValData
         self.plate=str(plate)
         self.plate_hash=str(plate_hash)
 
-        if self.validationData.gpsFilenames and self.validationData.oboFilenames:
+        if self.validationData.gpsFilenames and self.validationData.ercuFilenames:
             self.importGPSFiles()
-            # Load raw OBO rows once, then filter per VRM group each time
-            if not self.validationData.oboRawRows:
-                self.importOBOFiles()
-            else:
-                self.validationData.oboData = self._filterOBORows(self.validationData.oboRawRows)
+            self.importERCUFiles()
             self.doComparison()
             return self.validationData
 
-    def oboComparison(self,linkValData):
-        #Do link validation comparison between GPS and OBO database
+    def ercuComparison(self,linkValData):
+        #Do link validation comparison between GPS and ERCU database
         self.validationData = linkValData
 
         if self.validationData.gpsFilenames:
             self.importGPSFiles()
-            self.getPassagesFromOBO()
+            self.getPassagesFromERCU()
             self.doComparison()
             return self.validationData
         
 
     def importGPSFiles(self):
         #Determine if GPS file is OxTS or Vbox then call appropriate function
-        n_files = len(self.validationData.gpsFilenames)
-        start = getattr(self.UI, '_pct_start', 0)
-        rng   = getattr(self.UI, '_pct_range', 95)
-        self.UI.updateAverageSpeedValidationPB.emit({"progress":start,"message":self.vrm_prefix+"Importing GPS File(s)"})
+        self.UI.updateAverageSpeedValidationPB.emit({"progress":0,"message":"Importing GPS File(s)"})
 
-        for j, file in enumerate(self.validationData.gpsFilenames):
+        for file in self.validationData.gpsFilenames:
             if os.path.splitext(file)[-1].lower() == ".vbo":
                 self.validationData.calibrationEquipmentType="Vbox"
                 self.importVboxFile(file)
             elif os.path.splitext(file)[-1].lower() == ".csv":
                 self.validationData.calibrationEquipmentType="OxTS"
                 self.importOxTSFile(file)
-            pct = start + int(((j+1)/n_files) * rng * 0.4)
-            self.UI.updateAverageSpeedValidationPB.emit({"progress":pct,"message":self.vrm_prefix+"Importing GPS File(s)"})
+            self.pbProgress+=1
+            currentProgress=int((self.pbProgress/self.UI.pbTotal)*100)
+            self.UI.updateAverageSpeedValidationPB.emit({"progress":currentProgress,"message":"Importing GPS File(s)"})
         
         
     def importVboxFile(self, file):
@@ -325,80 +284,31 @@ class linkValidation:
             lineNumber=lineNumber+1 """
         
 
-    def importOBOFiles(self):
-        #Import OBO datafiles to a dict
-        n_files = len(self.validationData.oboFilenames)
-        start = getattr(self.UI, '_pct_start', 0)
-        rng   = getattr(self.UI, '_pct_range', 95)
-        self.UI.updateAverageSpeedValidationPB.emit({"progress": start + int(rng*0.4), "message":self.vrm_prefix+"Importing OBO File(s)"})
+    def importERCUFiles(self):
+        #Import ERCU datafiles to a dict
+        self.UI.updateAverageSpeedValidationPB.emit({"message":"Importing ERCU File(s)"})
 
-        for j, file in enumerate(self.validationData.oboFilenames):
-            self.importOBOFile(file)
-            pct = start + int(rng*0.4) + int(((j+1)/n_files) * rng * 0.2)
-            self.UI.updateAverageSpeedValidationPB.emit({"progress":pct, "message":self.vrm_prefix+"Importing OBO File(s)"})
+        for file in self.validationData.ercuFilenames:
+            self.importERCUFile(file)
+            self.pbProgress+=1
+            currentProgress=int((self.pbProgress/self.UI.pbTotal)*100)
+            self.UI.updateAverageSpeedValidationPB.emit({"progress":currentProgress,"message":"Importing ERCU File(s)"})
         
 
-    def importOBOFile(self, file):
-        import os
-        filename = os.path.basename(file)
-
+    def importERCUFile(self, file):
         #Check if input file is WSDOT or SpeedSpike
         if file.endswith(".xls") == True or file.endswith(".xlsx") == True:
-
-            # --- Load workbook ---
-            try:
-                workbook = openpyxl.load_workbook(file)
-            except Exception as e:
-                raise OBOFileValidationError(
-                    "Cannot Open OBO File",
-                    f"Could not open <b>{filename}</b>.<br><br>"
-                    f"Make sure the file is not open in Excel and is a valid .xlsx file.<br><br>"
-                    f"Detail: {str(e)}"
-                )
-
-            # --- Check for Matched sheet ---
-            if 'Matched' not in workbook.sheetnames:
-                available = ", ".join(workbook.sheetnames) or "(none)"
-                raise OBOFileValidationError(
-                    "Missing Sheet: Matched",
-                    f"The file <b>{filename}</b> does not contain a sheet named <b>Matched</b>.<br><br>"
-                    f"Sheets found: <i>{available}</i><br><br>"
-                    f"Please export the OBO data with the Matched sheet included."
-                )
-
+            #Process WSDOT excel file
+            workbook=openpyxl.load_workbook(file)
+            sheets = workbook.sheetnames
+            #sheet = workbook[sheets[0]]
             sheet = workbook['Matched']
+
             list_values = list(sheet.values)
+            headers=list(list_values[0])
+            
+            #self.plate_col=headers.index(WSDOTInputData.PLATE)
 
-            # --- Check sheet has data ---
-            if len(list_values) < 2:
-                raise OBOFileValidationError(
-                    "Empty Sheet",
-                    f"The <b>Matched</b> sheet in <b>{filename}</b> appears to be empty or has no data rows."
-                )
-
-            headers = list(list_values[0])
-
-            # --- Check all required columns are present ---
-            required_columns = {
-                WSDOTInputData.ENTRY_PRI_TIME: "Entry Primary Time",
-                WSDOTInputData.ENTRY_SEC_TIME: "Entry Secondary Time",
-                WSDOTInputData.EXIT_PRI_TIME:  "Exit Primary Time",
-                WSDOTInputData.EXIT_SEC_TIME:  "Exit Secondary Time",
-                WSDOTInputData.PRI_SPEED:      "Primary Speed",
-                WSDOTInputData.SEC_SPEED:      "Secondary Speed",
-                WSDOTInputData.PRI_CAM_ID:     "Primary Camera ID",
-                WSDOTInputData.LP_NUMBER:      "LP Number",
-                WSDOTInputData.LP_HASH:        "LP Hash",
-            }
-            missing = [label for col, label in required_columns.items() if col not in headers]
-            if missing:
-                missing_list = "<br>".join(f"&nbsp;&nbsp;• {m}" for m in missing)
-                raise OBOFileValidationError(
-                    "Missing Required Columns",
-                    f"The <b>Matched</b> sheet in <b>{filename}</b> is missing the following required columns:<br><br>"
-                    f"{missing_list}<br><br>"
-                    f"Please check the OBO export format and try again."
-                )
 
             self.entry_pri_time_col=headers.index(WSDOTInputData.ENTRY_PRI_TIME)
             self.entry_sec_time_col=headers.index(WSDOTInputData.ENTRY_SEC_TIME)
@@ -410,26 +320,63 @@ class linkValidation:
             self.lp_number_col=headers.index(WSDOTInputData.LP_NUMBER)
             self.lp_hash_col=headers.index(WSDOTInputData.LP_HASH)
 
-            obo_data=[list(elem) for elem in list_values[1:]]
-            # Store raw rows for re-filtering by subsequent VRM groups
-            self.validationData.oboRawRows.extend(obo_data)
-            self.validationData.oboData = self._filterOBORows(obo_data)
+            ercu_data=[list(elem) for elem in list_values[1:]]
+            
+            passage_id=1
+            for row in ercu_data:
+                if row[0] != None:
+                    #Check if passage is a VRM we are interested in
+                    if str(row[self.lp_number_col]) == str(self.plate) or str(row[self.lp_hash_col]) == str(self.plate_hash):
+                        #Convert datetime strings to datetime types
+
+                        if isinstance(row[self.entry_pri_time_col],str) == True:
+                            entry_pri_utc_time = datetime.strptime(row[self.entry_pri_time_col], "%Y-%m-%d %H:%M:%S.%f")
+                            exit_pri_utc_time = datetime.strptime(row[self.exit_pri_time_col], "%Y-%m-%d %H:%M:%S.%f")
+                        else:
+                            entry_pri_utc_time = row[self.entry_pri_time_col]
+                            exit_pri_utc_time = row[self.exit_pri_time_col]
+
+                        if isinstance(row[self.entry_sec_time_col],str) == True:
+                            entry_sec_utc_time = datetime.strptime(row[self.entry_sec_time_col], "%Y-%m-%d %H:%M:%S.%f")
+                            exit_sec_utc_time = datetime.strptime(row[self.exit_sec_time_col], "%Y-%m-%d %H:%M:%S.%f")
+                        else:
+                            entry_sec_utc_time = row[self.entry_sec_time_col]
+                            exit_sec_utc_time = row[self.exit_sec_time_col]
+
+                        #entry_pri_utc_time = entry_pri_utc_time + timedelta(seconds=18)
+                        #exit_pri_utc_time = exit_pri_utc_time + timedelta(seconds=18)
+                        #entry_sec_utc_time = entry_sec_utc_time + timedelta(seconds=18)
+                        #exit_sec_utc_time = exit_sec_utc_time + timedelta(seconds=18)
+                        
+
+                        entry_time_diff=entry_pri_utc_time-entry_sec_utc_time
+                        exit_time_diff=exit_pri_utc_time-exit_sec_utc_time
+
+                        vrm=str(row[self.lp_number_col])
+
+                        pri_speed=float(row[self.pri_speed_col])
+                        sec_speed=float(row[self.sec_speed_col])
+                        diff=(sec_speed-pri_speed)*100/pri_speed
+
+
+                        self.validationData.ercuData.append({"PassageID":vrm + "_" + str(passage_id), "DateTime":row[self.entry_pri_time_col],"VRM":vrm,"Speed":row[self.pri_speed_col],"SecSpeed":sec_speed,"PriSecSpeedDiff":diff,"FromRSE":row[self.pri_camera_id_col],"FromTime":entry_pri_utc_time,"ToRSE":"NA","ToTime":exit_pri_utc_time,"EntrySecTime":entry_sec_utc_time,"ExitSecTime":exit_sec_utc_time,"EntryTimeDiff":entry_time_diff.total_seconds(),"ExitTimeDiff":exit_time_diff.total_seconds()})                        
+                        passage_id+=1
         else:
-            OBOFile = open(file)
+            ERCUFile = open(file)
             #Process Speed Spike
-            for OBODataLine in OBOFile:
-                OBODataList=re.split(r'\t+', OBODataLine.rstrip('\t'))
+            for ERCUDataLine in ERCUFile:
+                ERCUDataList=re.split(r'\t+', ERCUDataLine.rstrip('\t'))
 
                 #Ignore header line:
-                if OBODataList[0] != "PassageID":
-                    passageID=OBODataList[0]
-                    dateTime=OBODataList[1]
-                    fromRSE=OBODataList[2]
-                    toRSE=OBODataList[3]
-                    fromEpochTime=OBODataList[4]
-                    toEpochTime=OBODataList[5]
-                    speed=OBODataList[6].rstrip()
-                    self.validationData.oboData.append({"PassageID":passageID, "DateTime":dateTime,"Speed":speed,"FromRSE":fromRSE,"FromEpochTime":fromEpochTime,"ToRSE":toRSE,"ToEpochTime":toEpochTime})
+                if ERCUDataList[0] != "PassageID":
+                    passageID=ERCUDataList[0]
+                    dateTime=ERCUDataList[1]
+                    fromRSE=ERCUDataList[2]
+                    toRSE=ERCUDataList[3]
+                    fromEpochTime=ERCUDataList[4]
+                    toEpochTime=ERCUDataList[5]
+                    speed=ERCUDataList[6].rstrip()
+                    self.validationData.ercuData.append({"PassageID":passageID, "DateTime":dateTime,"Speed":speed,"FromRSE":fromRSE,"FromEpochTime":fromEpochTime,"ToRSE":toRSE,"ToEpochTime":toEpochTime})
                     passageID=None
                     dateTime=None
                     speed=None
@@ -437,88 +384,29 @@ class linkValidation:
                     fromEpochTime=None
                     toRSE=None
 
-    def getPassagesFromOBO(self):
-        #Connect to OBO and get passage information
+    def getPassagesFromERCU(self):
+        #Connect to ERCU and get passage information
         mydb = mysql.connector.connect( host=self.validationData.instationIP, user=self.validationData.username, password=self.validationData.password, database="liftdb", ssl_disabled=True)
         cur = mydb.cursor()
         sql="SELECT a.PASSAGE_ID,a.TIMEDATE,a.VRM,a.PRIMARY_SPEED,a.ENTRY_RSE_ID, a.EXIT_RSE_ID, b.CAPTUREDATE_MS, c.CAPTUREDATE_MS from violationcreation.speedviolations_" + self.validationData.searchDateTime + " a join liftdb.ernoncompliantlog_" + self.validationData.searchDateTime + " b on a.ENTRY_ERID = b.ER_ID join liftdb.ernoncompliantlog_" + self.validationData.searchDateTime + " c on a.EXIT_ERID = c.ER_ID where a.VRM='" + self.validationData.VRM + "' and b.RSE_ID IS NOT null and c.RSE_ID IS NOT null"
 
         cur.execute(sql)
-        oboData=cur.fetchall()
+        ercuData=cur.fetchall()
         cur.close()
         mydb.close()
 
-        for passage in oboData:
-            self.validationData.oboData.append({"PassageID":passage[0], "DateTime":passage[1].strftime("%d/%m/%Y %H:%M:%S"),"Speed":str(passage[3]),"FromRSE":str(passage[4]),"FromTime":str(passage[6]),"ToRSE":str(passage[5]),"ToTime":str(passage[7])})
+        for passage in ercuData:
+            self.validationData.ercuData.append({"PassageID":passage[0], "DateTime":passage[1].strftime("%d/%m/%Y %H:%M:%S"),"Speed":str(passage[3]),"FromRSE":str(passage[4]),"FromTime":str(passage[6]),"ToRSE":str(passage[5]),"ToTime":str(passage[7])})
 
         
-    def _filterOBORows(self, raw_rows):
-        """Filter raw Excel OBO rows by current plate/hash and convert to passage dicts."""
-        filtered = []
-        passage_id = 1
-        for row in raw_rows:
-            if row[0] is None:
-                continue
-            if str(row[self.lp_number_col]) == str(self.plate) or str(row[self.lp_hash_col]) == str(self.plate_hash):
-                if isinstance(row[self.entry_pri_time_col], str):
-                    entry_pri_utc_time = datetime.strptime(row[self.entry_pri_time_col], "%Y-%m-%d %H:%M:%S.%f")
-                    exit_pri_utc_time  = datetime.strptime(row[self.exit_pri_time_col],  "%Y-%m-%d %H:%M:%S.%f")
-                else:
-                    entry_pri_utc_time = row[self.entry_pri_time_col]
-                    exit_pri_utc_time  = row[self.exit_pri_time_col]
-
-                if isinstance(row[self.entry_sec_time_col], str):
-                    entry_sec_utc_time = datetime.strptime(row[self.entry_sec_time_col], "%Y-%m-%d %H:%M:%S.%f")
-                    exit_sec_utc_time  = datetime.strptime(row[self.exit_sec_time_col],  "%Y-%m-%d %H:%M:%S.%f")
-                else:
-                    entry_sec_utc_time = row[self.entry_sec_time_col]
-                    exit_sec_utc_time  = row[self.exit_sec_time_col]
-
-                entry_time_diff = entry_pri_utc_time - entry_sec_utc_time
-                exit_time_diff  = exit_pri_utc_time  - exit_sec_utc_time
-                vrm       = str(row[self.lp_number_col])
-                pri_speed = float(row[self.pri_speed_col])
-                sec_speed = float(row[self.sec_speed_col])
-                diff      = (sec_speed - pri_speed) * 100 / pri_speed
-
-                filtered.append({
-                    "PassageID":       vrm + "_" + str(passage_id),
-                    "DateTime":        row[self.entry_pri_time_col],
-                    "VRM":             vrm,
-                    "Speed":           row[self.pri_speed_col],
-                    "SecSpeed":        sec_speed,
-                    "PriSecSpeedDiff": diff,
-                    "FromRSE":         row[self.pri_camera_id_col],
-                    "FromTime":        entry_pri_utc_time,
-                    "ToRSE":           "NA",
-                    "ToTime":          exit_pri_utc_time,
-                    "EntrySecTime":    entry_sec_utc_time,
-                    "ExitSecTime":     exit_sec_utc_time,
-                    "EntryTimeDiff":   entry_time_diff.total_seconds(),
-                    "ExitTimeDiff":    exit_time_diff.total_seconds(),
-                })
-                passage_id += 1
-
-        if not filtered:
-            plate  = str(self.plate)
-            p_hash = str(self.plate_hash)
-            raise OBOFileValidationError(
-                "No Matching Passages Found",
-                f"No passages were found matching:<br><br>"
-                f"&nbsp;&nbsp;• Plate: <b>{plate if plate else '(not provided)'}</b><br>"
-                f"&nbsp;&nbsp;• Hash: <b>{p_hash if p_hash else '(not provided)'}</b><br><br>"
-                f"Please check the plate number and hash are correct, and that the OBO file contains data for this vehicle."
-            )
-        return filtered
-
     def doComparison(self):
-        start = getattr(self.UI, '_pct_start', 0)
-        rng   = getattr(self.UI, '_pct_range', 95)
-        self.UI.updateAverageSpeedValidationPB.emit({"progress": start + int(rng*0.6), "message":self.vrm_prefix+"Calculating Passages"})
-        self.validationData.vboxCutData = []
+        currentProgress=int((self.UI.pbTotal-1/self.UI.pbTotal)*100)
+        self.UI.updateAverageSpeedValidationPB.emit({"progress":currentProgress,"message":"Calculating Passages"})
+        f = open(f"{self.plate}_vbox_cut_data.csv","w")
+        f.write("PassageID,Sats,Time,Speed,Lat,Long\n")
 
 
-        for passage in self.validationData.oboData:   #For each OBO passage do a calculation from GPS data
+        for passage in self.validationData.ercuData:   #For each ERCU passage do a calculation from GPS data
             vbox_cut_data=[]
             validity=""
             totalSpeed=0
@@ -526,18 +414,20 @@ class linkValidation:
             percentDiff=0
             avSpeed=0
             gpsErrorPoints=0
-            MinSats=int(float(self.validationData.commissioningConfig['AverageSpeed']['min_sats']))
+            MinSats=int(self.validationData.commissioningConfig['AverageSpeed']['min_sats'])
 
             for gpsPoint in self.validationData.gpsData:
-                if gpsPoint['Time'] >= passage['FromTime'] and gpsPoint['Time'] <= passage['ToTime'] and int(gpsPoint['SatNumber']) >= MinSats:
+                if gpsPoint['Time'] >= passage['FromTime'] and gpsPoint['Time'] <= passage['ToTime'] and int(float(gpsPoint['SatNumber'])) >= MinSats:
                     totalSpeed = totalSpeed+ float(gpsPoint['Speed'])
                     totalGPSPoints+=1
 
 
-                    self.validationData.vboxCutData.append([passage['PassageID'], gpsPoint['SatNumber'], gpsPoint['Time'], gpsPoint['Speed'], gpsPoint['Lat'], gpsPoint['Long']])
+                    #TEMPORARY
+                    f.write(f"{passage['PassageID']},{gpsPoint['SatNumber']},{gpsPoint['Time']},{gpsPoint['Speed']},{gpsPoint['Lat']},{gpsPoint['Long']}\n")
+
                     vbox_cut_data.append(gpsPoint)
 
-                elif gpsPoint['Time'] >= passage['FromTime'] and gpsPoint['Time'] <= passage['ToTime'] and int(gpsPoint['SatNumber']) < MinSats:
+                elif gpsPoint['Time'] >= passage['FromTime'] and gpsPoint['Time'] <= passage['ToTime'] and int(float(gpsPoint['SatNumber'])) < MinSats:
                     gpsErrorPoints+=1
         
 
@@ -545,13 +435,13 @@ class linkValidation:
                 avSpeed=totalSpeed / totalGPSPoints
                 #print(f"{totalSpeed} : {totalGPSPoints} : {avSpeed}")
                 percentDiff=((float(passage['Speed']) - avSpeed) / avSpeed * 100)
-                oboSpeed=passage['Speed']
+                ercuSpeed=passage['Speed']
 
                 #Check validity of run against Home Office requirements
-                if (float(oboSpeed) < 66 and (float(avSpeed) - float(oboSpeed)) > 2) or \
-                        (float(oboSpeed) < 50 and (float(avSpeed) - float(oboSpeed)) < -5) or \
-                        (float(oboSpeed) > 66 and percentDiff > 3) or \
-                        (float(oboSpeed) > 50 and percentDiff < -10):
+                if (float(ercuSpeed) < 66 and (float(avSpeed) - float(ercuSpeed)) > 2) or \
+                        (float(ercuSpeed) < 50 and (float(avSpeed) - float(ercuSpeed)) < -5) or \
+                        (float(ercuSpeed) > 66 and percentDiff > 3) or \
+                        (float(ercuSpeed) > 50 and percentDiff < -10):
                     validity="Invalid"
                 else:
                     validity="Valid"
@@ -565,24 +455,26 @@ class linkValidation:
                 #self.validationData.validationResultData.append([passage['PassageID'],str(passage['DateTime']).split(' ')[0],passage['VRM'],str(passage['DateTime']).split(' ')[1],passage['FromRSE'],passage['ToRSE'],round(avSpeed,3),passage['Speed'],str(round(percentDiff,3)),vbox_start,vbox_end,totalGPSPoints,gpsErrorPoints])
                 self.validationData.validationResultData.append([passage['PassageID'],str(passage['DateTime']),str(passage['EntrySecTime'])[:-3],passage['EntryTimeDiff'], str(passage['ToTime'])[:-3],str(passage['ExitSecTime'])[:-3],passage['ExitTimeDiff'],str(passage['VRM']),passage['FromRSE'],passage['ToRSE'],round(avSpeed,3),passage['Speed'],str(round(percentDiff,3)),speed_diff,passage['SecSpeed'],passage['PriSecSpeedDiff'],vbox_start[:-3],vbox_end[:-3],totalGPSPoints,gpsErrorPoints])
         
-                self.validation_headers=['Passage','Pri Entry Time','Sec Entry Time','Entry Time Diff','Pri Exit Time','Sec Exit Time','Exit Time Diff','VRM','From','To','GPS Spd','Pri OBO Spd','% Diff',"Spd Diff","Sec Spd","% Pri/Sec Spd Diff","FromVbox","ToVbox",'Points','Errors']
+                self.validation_headers=['Passage','Pri Entry Time','Sec Entry Time','Entry Time Diff','Pri Exit Time','Sec Exit Time','Exit Time Diff','VRM','From','To','GPS Spd','Pri ERCU Spd','% Diff',"Spd Diff","Sec Spd","% Pri/Sec Spd Diff","FromVbox","ToVbox",'Points','Errors']
         
+        f.close()
+
     #Save validation runs in Google Earth KML format
     def saveKML(self,linkValData):
         self.validationData = linkValData
-        self.UI.updateAverageSpeedValidationPB.emit({"progress":0,"message":self.vrm_prefix+"Importing GPS File(s)"})
-        self.UI.pbTotal=len(self.validationData.oboData*2)
-        MinSats=int(float(self.validationData.commissioningConfig['AverageSpeed']['min_sats']))
+        self.UI.updateAverageSpeedValidationPB.emit({"progress":0,"message":"Importing GPS File(s)"})
+        self.UI.pbTotal=len(self.validationData.ercuData*2)
+        MinSats=int(self.validationData.commissioningConfig['AverageSpeed']['min_sats'])
 
         if self.validationData.saveFilename != "":
             f = open(self.validationData.saveFilename, "w")
             f.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?><kml xmlns=\"http://earth.google.com/kml/2.1\"><Document><Folder><name>Filtered Passage Data</name><description>GPS data for each passage filtered by minimum number of satellites (" + str(MinSats) + ")</description>\n")
 
-            for passage in self.validationData.oboData:   #Step through passages one by one
+            for passage in self.validationData.ercuData:   #Step through passages one by one
                 #KML PATH START
                 f.write("<Placemark><name>" + passage['FromRSE'] + "_" + passage['PassageID'] + "</name><LineString><tessellate>1</tessellate><coordinates>\n")
                 for gpsPoint in self.validationData.gpsData:
-                    if gpsPoint['Time'] >= passage['FromTime'] and gpsPoint['Time'] <= passage['ToTime'] and int(gpsPoint['SatNumber']) >= MinSats:
+                    if gpsPoint['Time'] >= passage['FromTime'] and gpsPoint['Time'] <= passage['ToTime'] and int(float(gpsPoint['SatNumber'])) >= MinSats:
 
                         if gpsPoint['Lat'][2] == ".":   #Process OxTS
                             Lat=gpsPoint['Lat']
@@ -626,7 +518,7 @@ class linkValidation:
 
             f.write("</Folder><Folder><name>Raw Unfiltered GPS Data</name><description>Raw GPS data for each passage with no satellite filtering applied.</description>")
 
-            for passage in self.validationData.oboData:   #Step through passages one by one
+            for passage in self.validationData.ercuData:   #Step through passages one by one
                 #KML PATH START
                 f.write("<Placemark><name>" + passage['PassageID'] + "</name><LineString><tessellate>1</tessellate><coordinates>\n")
                 for gpsPoint in self.validationData.gpsData:
@@ -676,12 +568,12 @@ class linkValidation:
             f.close()
                
 
-    def saveOBOData(self, linkValData):
+    def saveERCUData(self, linkValData):
         self.validationData = linkValData
 
-        #Export OBO datafile to file
+        #Export ERCU datafile to file
         f = open(self.validationData.saveFilename, "w")
         f.write("PASSAGE_ID\tTIMEDATE\tPRIMARY_SPEED\tFROM_RSE\tFROM_TIMEDATE_MS\tTO_RSE\tTO_RSE_MS\n")
-        for line in self.validationData.oboData:
+        for line in self.validationData.ercuData:
             f.write(line["PassageID"] + "\t" + line["DateTime"] + "\t" + line["Speed"] + "\t" + line["FromRSE"] + "\t" + line["FromTime"] + "\t" + line["ToRSE"] + "\t" + line["ToEpochTime"] + "\n")
         f.close()

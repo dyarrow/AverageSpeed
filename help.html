@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Neology Average Speed — Help</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;600&display=swap');
+
+  :root {
+    --bg:       #f0f0f0;
+    --surface:  #ffffff;
+    --card:     #fafafa;
+    --border:   #e0e0e0;
+    --border2:  #d0d0d0;
+    --accent:   #0078d4;
+    --accent-h: #106ebe;
+    --accent-l: #cce4f7;
+    --accent-xl:#f0f7ff;
+    --success:  #107c10;
+    --success-l:#dff6dd;
+    --warning:  #9a4b00;
+    --warning-l:#fff4ce;
+    --danger:   #c50f1f;
+    --danger-l: #fde7e9;
+    --txt:      #333333;
+    --txt2:     #555555;
+    --txt3:     #888888;
+    --sans:     'Segoe UI', Arial, sans-serif;
+    --mono:     'Consolas', 'Courier New', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--txt);
+    font-family: var(--sans);
+    font-size: 9pt;
+    line-height: 1.6;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 32px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header-logo {
+    width: 30px; height: 30px;
+    background: var(--accent);
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .header h1 {
+    font-size: 11pt;
+    font-weight: 600;
+    color: var(--txt);
+  }
+  .header p {
+    font-size: 8pt;
+    color: var(--txt3);
+    margin-top: 1px;
+  }
+
+  /* ── Layout ── */
+  .layout {
+    display: flex;
+    min-height: calc(100vh - 57px);
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: 200px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    position: sticky;
+    top: 57px;
+    height: calc(100vh - 57px);
+    overflow-y: auto;
+  }
+  .sidebar-section {
+    padding: 12px 14px 4px;
+    font-size: 7.5pt;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: var(--txt3);
+    text-transform: uppercase;
+  }
+  .sidebar a {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 14px;
+    font-size: 8.5pt;
+    color: var(--txt2);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    transition: all 0.12s;
+  }
+  .sidebar a:hover { color: var(--txt); background: var(--accent-xl); }
+  .sidebar a.active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    background: var(--accent-xl);
+    font-weight: 600;
+  }
+
+  /* ── Main content ── */
+  .content {
+    flex: 1;
+    padding: 32px 40px;
+    max-width: 820px;
+  }
+
+  /* ── Section headings ── */
+  .section { margin-bottom: 48px; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--accent);
+  }
+  .section-num {
+    font-family: var(--mono);
+    font-size: 8pt;
+    color: #fff;
+    background: var(--accent);
+    border-radius: 3px;
+    padding: 1px 7px;
+    flex-shrink: 0;
+  }
+  .section-header h2 {
+    font-size: 12pt;
+    font-weight: 600;
+    color: var(--txt);
+  }
+
+  /* ── Timeline ── */
+  .timeline { position: relative; padding-left: 0; }
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 18px;
+    top: 20px;
+    bottom: 20px;
+    width: 1px;
+    background: var(--border);
+  }
+  .step { display: flex; gap: 16px; margin-bottom: 24px; position: relative; }
+  .step-icon {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    position: relative; z-index: 1;
+  }
+  .step-icon.blue  { background: var(--accent-xl); border-color: var(--accent-l); }
+  .step-icon.green { background: var(--success-l); border-color: #92d050; }
+  .step-icon.amber { background: var(--warning-l); border-color: #f0c060; }
+  .step-body { flex: 1; padding-top: 6px; }
+  .step-body h3 { font-size: 10pt; font-weight: 600; color: var(--txt); margin-bottom: 4px; }
+  .step-body p  { font-size: 8.5pt; color: var(--txt2); line-height: 1.6; margin-bottom: 6px; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-top: 10px;
+  }
+  .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+  .card h4 {
+    font-size: 8pt;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--txt3);
+    margin-bottom: 6px;
+  }
+  .card p { font-size: 8.5pt; color: var(--txt2); }
+
+  /* ── Callouts ── */
+  .callout {
+    display: flex;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 4px;
+    margin: 10px 0;
+    font-size: 8.5pt;
+    border: 1px solid;
+  }
+  .callout.tip  { background: var(--accent-xl); border-color: var(--accent-l); color: var(--txt2); }
+  .callout.warn { background: var(--warning-l); border-color: #f0c060; color: var(--warning); }
+  .callout.info { background: var(--accent-xl); border-color: var(--accent); color: var(--txt2); }
+  .callout strong { color: var(--txt); }
+  .callout-icon { flex-shrink: 0; color: var(--accent); font-weight: 600; }
+  .callout.warn .callout-icon { color: var(--warning); }
+
+  /* ── Tags ── */
+  .tag {
+    display: inline-block;
+    font-family: var(--mono);
+    font-size: 8pt;
+    padding: 1px 7px;
+    border-radius: 3px;
+    border: 1px solid;
+    margin: 2px 2px 2px 0;
+  }
+  .tag.blue  { background: var(--accent-xl); border-color: var(--accent-l); color: var(--accent); }
+  .tag.green { background: var(--success-l); border-color: #92d050; color: var(--success); }
+  .tag.amber { background: var(--warning-l); border-color: #f0c060; color: var(--warning); }
+  .tag.gray  { background: var(--card); border-color: var(--border); color: var(--txt3); }
+
+  /* ── VRM badge ── */
+  .vrm {
+    display: inline-block;
+    background: #fcd116;
+    color: #000;
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 9pt;
+    padding: 2px 8px;
+    border-radius: 3px;
+    letter-spacing: 0.06em;
+    border: 1px solid #daa800;
+  }
+
+  /* ── Wizard steps ── */
+  .wizard-steps { counter-reset: wizard; }
+  .wizard-step { display: flex; gap: 14px; margin-bottom: 18px; }
+  .wizard-step-num {
+    counter-increment: wizard;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: white;
+    font-size: 8pt;
+    font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .wizard-step-num::after { content: counter(wizard); }
+  .wizard-step-body { flex: 1; padding-top: 2px; }
+  .wizard-step-body h4 { font-size: 9.5pt; font-weight: 600; color: var(--txt); margin-bottom: 3px; }
+  .wizard-step-body p  { font-size: 8.5pt; color: var(--txt2); }
+
+  /* ── Screen mockup ── */
+  .screen {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 12px 0;
+  }
+  .screen-bar {
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 6px 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .screen-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .screen-title { font-size: 8pt; color: var(--txt3); margin-left: 4px; }
+  .screen-body { padding: 16px; }
+
+  /* ── Toolbar mockup ── */
+  .toolbar {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding: 6px 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin: 8px 0;
+    flex-wrap: wrap;
+  }
+  .tb-btn {
+    font-size: 8.5pt;
+    padding: 3px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border2);
+    color: var(--txt);
+    background: var(--surface);
+    font-family: var(--sans);
+    white-space: nowrap;
+    min-height: 22px;
+  }
+  .tb-btn.primary {
+    background: var(--accent);
+    border-color: #0067b8;
+    color: white;
+    font-weight: 600;
+  }
+  .tb-sep { width: 1px; height: 18px; background: var(--border); }
+  .tb-label { font-size: 8pt; color: var(--txt3); }
+
+  /* ── Table ── */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8pt;
+    font-family: var(--mono);
+  }
+  .data-table th {
+    text-align: left;
+    padding: 5px 8px;
+    background: var(--bg);
+    color: var(--txt2);
+    font-size: 7.5pt;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+  }
+  .data-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #f0f0f0;
+    color: var(--txt);
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table tr.pass-row { background: var(--success-l); }
+  .data-table tr.fail-row { background: var(--danger-l); }
+  .pass { color: var(--success); font-weight: 600; }
+  .fail { color: var(--danger); font-weight: 600; }
+
+  /* ── Vehicle diagram ── */
+  .vehicle-diagram {
+    display: flex;
+    align-items: center;
+    padding: 20px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin: 12px 0;
+  }
+  .vd-site {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    text-align: center;
+    width: 100px;
+    flex-shrink: 0;
+  }
+  .vd-site .label {
+    font-size: 7.5pt;
+    color: var(--txt3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+  .vd-site .cam { font-size: 8.5pt; color: var(--accent); font-weight: 600; }
+  .vd-road {
+    flex: 1;
+    height: 2px;
+    background: repeating-linear-gradient(90deg, var(--txt3) 0, var(--txt3) 10px, transparent 10px, transparent 20px);
+    margin: 0 4px;
+    position: relative;
+  }
+  .vd-car {
+    position: absolute;
+    top: -13px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 20px;
+  }
+  .vd-dist {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 8pt;
+    color: var(--warning);
+    font-family: var(--mono);
+    white-space: nowrap;
+    background: var(--warning-l);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  hr.section-rule {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 40px 0;
+  }
+
+  p + p { margin-top: 8px; }
+  ul { padding-left: 18px; }
+  li { margin: 3px 0; font-size: 8.5pt; color: var(--txt2); }
+  li strong { color: var(--txt); }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+      <rect x="1" y="8" width="16" height="2" rx="1" fill="white"/>
+      <circle cx="4" cy="9" r="3" fill="white" opacity="0.5"/>
+      <circle cx="14" cy="9" r="3" fill="white" opacity="0.5"/>
+      <path d="M9 3 L9 15" stroke="white" stroke-width="1.2" stroke-dasharray="2 2"/>
+    </svg>
+  </div>
+  <div>
+    <h1>Neology Average Speed Enforcement</h1>
+    <p>User Guide &amp; Workflow Reference</p>
+  </div>
+</div>
+
+<div class="layout">
+
+<nav class="sidebar">
+  <div class="sidebar-section">Overview</div>
+  <a href="#overview" class="active">Introduction</a>
+
+  <div class="sidebar-section">Workflow</div>
+  <a href="#step1">1. Prepare vehicles</a>
+  <a href="#step2">2. Run the section</a>
+  <a href="#step3">3. Collect VBox data</a>
+  <a href="#step4">4. Export OBO data</a>
+
+  <div class="sidebar-section">Tool</div>
+  <a href="#wizard">Using the wizard</a>
+  <a href="#wizard-pages">Wizard pages</a>
+  <a href="#results">Reading results</a>
+
+  <div class="sidebar-section">Reference</div>
+  <a href="#thresholds">Pass/fail thresholds</a>
+  <a href="#export">Exporting data</a>
+  <a href="#tips">Troubleshooting</a>
+</nav>
+
+<main class="content">
+
+  <!-- Overview -->
+  <div class="section" id="overview">
+    <div class="section-header">
+      <span class="section-num">00</span>
+      <h2>Introduction</h2>
+    </div>
+
+    <p style="color:var(--txt2);">The Neology Average Speed Enforcement tool validates that average speed cameras are reading and recording vehicle speeds accurately. Calibrated VBox GPS data-loggers are driven through the enforcement section, and the average of the GPS-measured speeds are compared against the OBO calculations.</p>
+
+    <div class="vehicle-diagram">
+      <div class="vd-site">
+        <div class="label">Entry</div>
+        <div class="cam">◉ Camera A</div>
+      </div>
+      <div class="vd-road">
+        <div class="vd-car" style="transform:scaleX(-1);">🚗</div>
+        <div class="vd-dist">known distance</div>
+      </div>
+      <div class="vd-site">
+        <div class="label">Exit</div>
+        <div class="cam">◉ Camera B</div>
+      </div>
+    </div>
+
+    <div class="card-grid">
+      <div class="card">
+        <h4>VBox measures</h4>
+        <p>GPS-derived speed and precise timestamps (at 10 or 25hz for Vbox, 100hz for OxTS RT) throughout the enforcement section.</p>
+      </div>
+      <div class="card">
+        <h4>OBO records</h4>
+        <p>The camera system's speed calculation based on the known inter-camera distance and passage timestamps.</p>
+      </div>
+    </div>
+
+    <div class="callout tip" style="margin-top:12px;">
+      <span class="callout-icon">i</span>
+      <div>The tool compares the average of the GPS points with the calculated OBO values and checks whether the difference falls within configured tolerance thresholds — giving a clear pass or fail for each passage.</div>
+    </div>
+  </div>
+
+  <hr class="section-rule">
+
+  <!-- Step 1 -->
+  <div class="section" id="step1">
+    <div class="section-header">
+      <span class="section-num">01</span>
+      <h2>Prepare test vehicles</h2>
+    </div>
+
+    <p style="color:var(--txt2); margin-bottom:16px;">Before driving the section, install a VBox unit in each test vehicle and note the vehicle's VRM (front and rear plates).</p>
+
+    <div class="timeline">
+
+      <div class="step">
+        <div class="step-icon blue">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="2" y="2" width="12" height="12" rx="2" stroke="#0078d4" stroke-width="1.5"/>
+            <path d="M4 8h8M8 4v8" stroke="#0078d4" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="step-body">
+          <h3>Install the VBox unit in the test vehicle</h3>
+          <p>Mount the VBox data-logger with a clear view of the sky. Ensure the antenna has unobstructed GPS reception. Allow at least 5 minutes for satellite lock before beginning runs.</p>
+
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-icon blue">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="2" y="3" width="9" height="10" rx="1.5" stroke="#0078d4" stroke-width="1.5"/>
+            <path d="M4 7h5M4 10h3" stroke="#0078d4" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="step-body">
+          <h3>Note the vehicle VRM — front and rear plates</h3>
+          <p>Record the vehicle registration mark for both the front and rear plates. Average speed cameras read plates in both directions, so the tool needs to know which VRM to match in the OBO data.</p>
+
+          <div class="card" style="margin-top:10px;">
+            <h4>Example vehicle record</h4>
+            <div style="display:flex;gap:20px;align-items:center;margin-top:8px;flex-wrap:wrap;">
+              <div>
+                <div style="font-size:7.5pt;color:var(--txt3);margin-bottom:3px;text-transform:uppercase;font-weight:600;">Front</div>
+                <span class="vrm">AB12 CDE</span>
+              </div>
+              <div>
+                <div style="font-size:7.5pt;color:var(--txt3);margin-bottom:3px;text-transform:uppercase;font-weight:600;">Rear</div>
+                <span class="vrm">AB12 CDE</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-icon amber">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6" stroke="#9a4b00" stroke-width="1.5"/>
+            <path d="M8 5v3.5" stroke="#9a4b00" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="8" cy="11" r="0.75" fill="#9a4b00"/>
+          </svg>
+        </div>
+        <div class="step-body">
+          <h3>Check time synchronisation</h3>
+          <p>Ensure the VBox clock is synchronised to UTC. If your VBox records in local time or has a known drift, configure the <strong>Time offset</strong> value in the Settings dialog before running the comparison. The <strong>Leap seconds</strong> setting is only required for legacy VBox units such as the SX10.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="section-rule">
+
+  <!-- Step 2 -->
+  <div class="section" id="step2">
+    <div class="section-header">
+      <span class="section-num">02</span>
+      <h2>Run vehicles through the section</h2>
+    </div>
+
+    <p style="color:var(--txt2); margin-bottom:16px;">Drive each test vehicle through the average speed enforcement section at representative speeds. The VBox records the GPS track throughout.</p>
+
+    <div class="timeline">
+
+      <div class="step">
+        <div class="step-icon blue">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M2 8h12M9 4l4 4-4 4" stroke="#0078d4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="step-body">
+          <h3>Drive through at consistent speeds</h3>
+          <p>Enter the section at a steady speed.</p>
+          <div class="card-grid">
+            <div class="card">
+              <h4>Recommended runs</h4>
+              <p>Minimum 10 passes per vehicle per direction at different speeds across the enforcement band.</p>
+            </div>
+            <div class="card">
+              <h4>Direction</h4>
+              <p>Run vehicles in both directions if the site enforces both.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-icon blue">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="8" cy="8" r="6" stroke="#0078d4" stroke-width="1.5"/>
+            <path d="M8 4.5v3.8l2.5 1.5" stroke="#0078d4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="step-body">
+          <h3>Note the time window of each run</h3>
+          <p>Record the approximate start and end time of your run session. You will need this when exporting OBO data — you only need to export the period covering your test runs.</p>
+          <div class="callout tip">
+            <span class="callout-icon">i</span>
+            <div>Leave a buffer of at least 5 minutes either side of your run window when exporting OBO data to ensure no passages are missed.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="section-rule">
+
+  <!-- Step 3 -->
+  <div class="section" id="step3">
+    <div class="section-header">
+      <span class="section-num">03</span>
+      <h2>Collect VBox data</h2>
+    </div>
+
+    <p style="color:var(--txt2); margin-bottom:16px;">Once all runs are complete, retrieve the GPS data files from the VBox units in each vehicle.</p>
+
+    <div class="timeline">
+
+      <div class="step">
+        <div class="step-icon blue">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <rect x="3" y="2" width="10" height="12" rx="1.5" stroke="#0078d4" stroke-width="1.5"/>
+            <path d="M5 6h6M5 9h6M5 12h3" stroke="#0078d4" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="step-body">
+          <h3>Download from the VBox unit</h3>
+          <p>Connect the VBox to a laptop via USB or remove the SD card. Copy the data files for each run session to a clearly labelled folder per vehicle.</p>
+          <div class="card" style="margin-top:10px;">
+            <h4>Supported file formats</h4>
+            <div style="margin-top:5px;">
+              <span class="tag blue">.vbo — VBox native</span>
+              <span class="tag green">.csv — OxTS format</span>
+            </div>
+            <p style="margin-top:6px; font-size:8pt; color:var(--txt3);">The tool auto-detects the format from the file extension. A single vehicle may have multiple run files — all can be added together in the wizard.</p>
+          </div>
+        </div>
+      </div>
+
+
+    </div>
+  </div>
+
+  <hr class="section-rule">
+
+  <!-- Step 4 -->
+  <div class="section" id="step4">
+    <div class="section-header">
+      <span class="section-num">04</span>
+      <h2>Export OBO data from the camera system</h2>
+    </div>
+
+    <p style="color:var(--txt2); margin-bottom:16px;">The OBO file is the camera system's record of all vehicle passages. Export this for the time window covering your test runs.</p>
+
+    <div class="timeline">
+
+      <div class="step">
+        <div class="step-icon blue">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 2v8M4 7l4 4 4-4" stroke="#0078d4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M2 13h12" stroke="#0078d4" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="step-body">
+          <h3>Export from the OBO</h3>
+          <p>Access the OBO (Operational Back Office) interface and export the passage data as an Excel file (.xlsx) for the date/time range covering your run session (plus the 5-minute buffer). The tool validates the file on import — if required columns or the Matched sheet are missing, a clear error message is shown.</p>
+
+          <div class="card" style="margin-top:10px;">
+            <h4>OBO file requirements</h4>
+            <div style="font-size:8.5pt; color:var(--txt2); line-height:2; margin-top:4px;">
+              <div>✓ &nbsp;Excel format <span style="font-family:var(--mono);">(.xlsx)</span></div>
+              <div>✓ &nbsp;Contains a sheet named <span style="font-family:var(--mono);color:var(--accent);">Matched</span></div>
+              <div>✓ &nbsp;Includes columns: <span style="font-family:var(--mono);">LP Number, LP Hash, Entry Primary Time, Entry Secondary Time, Exit Primary Time, Exit Secondary Time, Primary Speed, Secondary Speed, Primary Camera ID</span></div>
+            </div>
+          </div>
+
+          <div class="callout warn" style="margin-top:10px;">
+            <span class="callout-icon">!</span>
+            <div>Double-check export settings if the tool reports a validation error — the Matched sheet name and column layout must match exactly.</div>
+          </div>
+
+          <div class="callout tip" style="margin-top:10px;">
+            <span class="callout-icon">i</span>
+            <div><strong>Plate hashes:</strong> If the OBO is configured to use hashed plates only, you will need to determine which hash matches each vehicle using the image review and enter this in the wizard instead of the VRM.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="section-rule">
+
+  <!-- Wizard intro -->
+  <div class="section" id="wizard">
+    <div class="section-header">
+      <span class="section-num">05</span>
+      <h2>Running the comparison — the wizard</h2>
+    </div>
+
+    <p style="color:var(--txt2); margin-bottom:16px;">With the OBO file and VBox files ready, open the tool and click <strong>⚡ Compare ▾</strong> from the toolbar on the Baseline Validation tab, then select <strong>Wizard</strong>.</p>
+
+    <div class="screen">
+      <div class="screen-bar">
+        <div class="screen-dot" style="background:#e0e0e0;"></div>
+        <div class="screen-dot" style="background:#e0e0e0;"></div>
+        <div class="screen-dot" style="background:#e0e0e0;"></div>
+        <span class="screen-title">Neology Average Speed Enforcement — Baseline Validation tab</span>
+      </div>
+      <div class="screen-body">
+        <div class="toolbar">
+          <button class="tb-btn">⚡ Compare ▾</button>
+          <button class="tb-btn">↓ Export ▾</button>
+          <div class="tb-sep"></div>
+          <label style="font-size:8.5pt;color:var(--txt2);display:flex;align-items:center;gap:5px;">
+            <input type="checkbox" disabled> Enable Validation
+          </label>
+          <div style="flex:1;"></div>
+          <button class="tb-btn">⚙ Settings</button>
+          <button class="tb-btn">? Help ▾</button>
+        </div>
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:4px;margin-top:4px;width:160px;">
+          <div style="padding:4px 0;">
+            <div style="padding:5px 14px;font-size:8.5pt;color:var(--txt2);">Quick Compare</div>
+            <div style="padding:5px 14px;font-size:8.5pt;color:var(--accent);font-weight:600;background:var(--accent-xl);">Wizard</div>
+          </div>
+        </div>
+        <p style="font-size:8pt;color:var(--txt3);margin-top:8px;">Select <strong style="color:var(--accent);">Wizard</strong> for a multi-vehicle guided comparison. Use <strong>Quick Compare</strong> for a single vehicle.</p>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-rule">
+
+  <!-- Wizard pages -->
+  <div class="section" id="wizard-pages">
+    <div class="section-header">
+      <span class="section-num">06</span>
+      <h2>Wizard pages</h2>
+    </div>
+
+    <p style="color:var(--txt2); margin-bottom:18px;">The wizard guides you through 6 pages. Each is described below.</p>
+
+    <div class="wizard-steps">
+
+      <div class="wizard-step">
+        <div class="wizard-step-num"></div>
+        <div class="wizard-step-body">
+          <h4>Introduction</h4>
+          <p>Overview of the wizard process. Click Next to begin.</p>
+        </div>
+      </div>
+
+      <div class="wizard-step">
+        <div class="wizard-step-num"></div>
+        <div class="wizard-step-body">
+          <h4>VRM groups — configure your test vehicles</h4>
+          <p>Add one group per VRM. A single vehicle may have multiple VRMs (e.g. front and rear plates being different), so add a separate group for each. Each group requires the plate (VRM) or hash, and one or more VBox GPS files for that vehicle.</p>
+
+          <div class="screen" style="margin-top:10px;">
+            <div class="screen-bar">
+              <div class="screen-dot" style="background:#e0e0e0;"></div>
+              <span class="screen-title">VRM Groups page</span>
+            </div>
+            <div class="screen-body" style="padding:12px;">
+              <div style="font-size:8.5pt;color:var(--txt);text-align:center;border:1px solid var(--border);border-radius:4px;padding:6px;background:var(--surface);margin-bottom:10px;font-weight:600;">+ Add VRM Group</div>
+              <div style="background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:12px;margin-bottom:10px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                  <span style="font-size:9pt;font-weight:600;color:var(--txt);">Vehicle 1</span>
+                  <span class="tag amber">3 GPS files</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+                  <div>
+                    <div style="font-size:7.5pt;color:var(--txt3);margin-bottom:3px;text-transform:uppercase;font-weight:600;">Plate</div>
+                    <span class="vrm" style="font-size:8.5pt;">AB12 CDE</span>
+                  </div>
+                  <div>
+                    <div style="font-size:7.5pt;color:var(--txt3);margin-bottom:3px;text-transform:uppercase;font-weight:600;">Hash (optional)</div>
+                    <span style="font-family:var(--mono);font-size:8pt;color:var(--txt2);">A3F9B2C1...</span>
+                  </div>
+                </div>
+                <div style="font-size:8pt;color:var(--txt3);">GPS files: run1.vbo &nbsp;·&nbsp; run2.vbo &nbsp;·&nbsp; run3.vbo</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="callout tip" style="margin-top:8px;">
+            <span class="callout-icon">i</span>
+            <div>If you have used the wizard before, click <strong>Restore Previous</strong> to reload your vehicle configuration from the last session without re-entering anything.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="wizard-step">
+        <div class="wizard-step-num"></div>
+        <div class="wizard-step-body">
+          <h4>OBO file</h4>
+          <p>Browse to and select the OBO Excel file exported from the camera management system. The file is validated immediately — errors such as a missing Matched sheet or required columns are shown here before proceeding. The same OBO file is used for all vehicle groups.</p>
+        </div>
+      </div>
+
+      <div class="wizard-step">
+        <div class="wizard-step-num"></div>
+        <div class="wizard-step-body">
+          <h4>Pre-run summary</h4>
+          <p>A scrollable summary of all vehicle groups, GPS files, and the selected OBO file. Review carefully — use Back to correct anything before the comparison starts.</p>
+        </div>
+      </div>
+
+      <div class="wizard-step">
+        <div class="wizard-step-num"></div>
+        <div class="wizard-step-body">
+          <h4>Progress</h4>
+          <p>The comparison runs automatically. The progress bar shows the current stage for each vehicle group in turn: GPS import, OBO filtering, and speed calculation. This page advances to Results automatically when complete.</p>
+        </div>
+      </div>
+
+      <div class="wizard-step">
+        <div class="wizard-step-num"></div>
+        <div class="wizard-step-body">
+          <h4>Results summary</h4>
+          <p>Shows the overall pass/fail count across all passages and all vehicles. Click <strong>Finish</strong> to load the full results into the main validation table.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="section-rule">
+
+  <!-- Results -->
+  <div class="section" id="results">
+    <div class="section-header">
+      <span class="section-num">07</span>
+      <h2>Reading the results</h2>
+    </div>
+
+    <p style="color:var(--txt2); margin-bottom:14px;">After the comparison, the main table is populated with one row per matched passage, colour-coded by pass/fail status.</p>
+
+    <div class="screen">
+      <div class="screen-bar">
+        <div class="screen-dot" style="background:#e0e0e0;"></div>
+        <span class="screen-title">Validation results table (example)</span>
+      </div>
+      <div class="screen-body" style="padding:0;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Passage</th>
+              <th>VRM</th>
+              <th>Entry Time</th>
+              <th>Pri OBO Spd</th>
+              <th>Vbox Avg Spd</th>
+              <th>% Diff</th>
+              <th>MPH Diff</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="pass-row">
+              <td>1</td>
+              <td><span class="vrm" style="font-size:8pt;padding:1px 6px;">AB12CDE</span></td>
+              <td>09:14:32.081</td>
+              <td>38.2</td>
+              <td>38.0</td>
+              <td class="pass">+0.52%</td>
+              <td class="pass">+0.2</td>
+            </tr>
+            <tr class="pass-row">
+              <td>2</td>
+              <td><span class="vrm" style="font-size:8pt;padding:1px 6px;">AB12CDE</span></td>
+              <td>09:41:07.312</td>
+              <td>49.7</td>
+              <td>49.3</td>
+              <td class="pass">+0.81%</td>
+              <td class="pass">+0.4</td>
+            </tr>
+            <tr class="fail-row">
+              <td>3</td>
+              <td><span class="vrm" style="font-size:8pt;padding:1px 6px;">XY99ZZZ</span></td>
+              <td>10:03:51.445</td>
+              <td>52.1</td>
+              <td>49.6</td>
+              <td class="fail">+4.80%</td>
+              <td class="fail">+2.5</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card-grid" style="margin-top:12px;">
+      <div class="card" style="border-left:3px solid var(--success);">
+        <h4 style="color:var(--success);">Pass (green)</h4>
+        <p>The OBO speed is within the configured tolerance of the VBox speed for this passage.</p>
+      </div>
+      <div class="card" style="border-left:3px solid var(--danger);">
+        <h4 style="color:var(--danger);">Fail (red)</h4>
+        <p>The OBO speed differs from the VBox speed by more than the allowed tolerance. Investigate this passage.</p>
+      </div>
+    </div>
+
+    <div class="callout tip" style="margin-top:12px;">
+      <span class="callout-icon">i</span>
+      <div>Use the <strong>column filter icons</strong> (funnel on each header — click the left edge of any column header) to filter the results table by VRM, speed range, or pass/fail status.</div>
+    </div>
+  </div>
+
+  <hr class="section-rule">
+
+  <!-- Thresholds -->
+  <div class="section" id="thresholds">
+    <div class="section-header">
+      <span class="section-num">08</span>
+      <h2>Pass/fail thresholds</h2>
+    </div>
+
+    <p style="color:var(--txt2); margin-bottom:12px;">Thresholds are configured in <strong>Settings</strong> (top-right of the main window). Two modes are available:</p>
+
+    <div class="card-grid">
+      <div class="card">
+        <h4>Percentage only mode</h4>
+        <p>Pass if the speed difference is within ±N% of the VBox speed. Applied to all passages. Enabled by ticking <em>Percentage only</em> in Settings.</p>
+      </div>
+      <div class="card">
+        <h4>Speed breakpoint mode</h4>
+        <p>Below the breakpoint: apply a ±MPH tolerance. Above the breakpoint: apply a ±% tolerance. Allows tighter absolute tolerances at lower speeds.</p>
+      </div>
+    </div>
+
+    <div class="callout info" style="margin-top:12px;">
+      <span class="callout-icon">i</span>
+      <div>Changing thresholds in Settings immediately re-colours the existing results table — you do not need to re-run the comparison.</div>
+    </div>
+  </div>
+
+  <hr class="section-rule">
+
+  <!-- Export -->
+  <div class="section" id="export">
+    <div class="section-header">
+      <span class="section-num">09</span>
+      <h2>Exporting results</h2>
+    </div>
+
+    <p style="color:var(--txt2); margin-bottom:14px;">Three export options are available from the toolbar after a successful comparison:</p>
+
+    <div class="timeline">
+      <div class="step">
+        <div class="step-icon green">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <rect x="2" y="2" width="11" height="11" rx="2" stroke="#107c10" stroke-width="1.5"/>
+            <path d="M4 7.5l2 2 4-4" stroke="#107c10" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="step-body">
+          <h3>Export CSV / XLSX</h3>
+          <p>Full results table exported to CSV and Excel format. Suitable for inclusion in compliance reports.</p>
+          <span class="tag green">Export CSV</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-icon green">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <path d="M7.5 1.5C5 1.5 3 3.5 3 6c0 3.5 4.5 8 4.5 8s4.5-4.5 4.5-8c0-2.5-2-4.5-4.5-4.5z" stroke="#107c10" stroke-width="1.5"/>
+            <circle cx="7.5" cy="6" r="1.5" stroke="#107c10" stroke-width="1.5"/>
+          </svg>
+        </div>
+        <div class="step-body">
+          <h3>Export KML</h3>
+          <p>GPS track as a KML file for visualisation in Google Earth or mapping software. Useful for verifying the VBox track aligns with the enforcement section geometry.</p>
+          <span class="tag blue">Export KML</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-icon green">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+            <rect x="2" y="2" width="11" height="11" rx="2" stroke="#107c10" stroke-width="1.5"/>
+            <path d="M4 5h7M4 8h7M4 11h4" stroke="#107c10" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="step-body">
+          <h3>Export VBox Cut</h3>
+          <p>Exports the precise moments the vehicle crossed each camera as determined by the GPS track. Useful for verifying the tool correctly identified entry and exit events.</p>
+          <span class="tag amber">Export Vbox Cut</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="section-rule">
+
+  <!-- Tips -->
+  <div class="section" id="tips">
+    <div class="section-header">
+      <span class="section-num">10</span>
+      <h2>Troubleshooting</h2>
+    </div>
+
+    <div class="card" style="margin-bottom:10px;">
+      <h4>No passages matched for a vehicle</h4>
+      <p>Check that the VRM entered in the wizard exactly matches what appears in the OBO file. Spaces, leading zeros, and letter case can all cause mismatches. If the site uses hashed plates, ensure the correct hash is entered.</p>
+    </div>
+
+    <div class="card" style="margin-bottom:10px;">
+      <h4>GPS timestamps don't align with OBO times</h4>
+      <p>Configure the <strong>Time offset</strong> value in Settings. The VBox clock must be in UTC — if it records local time, apply the appropriate hour offset. The <strong>Leap seconds</strong> setting is only required for legacy VBox units such as the SX10.</p>
+    </div>
+
+    <div class="card" style="margin-bottom:10px;">
+      <h4>Passages found but speeds differ wildly</h4>
+      <p>This usually means the wrong GPS file was assigned to a vehicle, or the VBox file covers a different run session than the OBO data. Check the timestamps in both files match the expected run window.</p>
+    </div>
+
+    <div class="card" style="margin-bottom:10px;">
+      <h4>OBO file validation error</h4>
+      <p>The tool checks for a sheet named <span style="font-family:var(--mono);color:var(--accent);">Matched</span> and required columns. If the export uses a different sheet name or column layout, check the export settings in the camera management system.</p>
+    </div>
+
+    <div class="callout tip">
+      <span class="callout-icon">i</span>
+      <div><strong>Restore Previous:</strong> After a successful wizard run, the vehicle configuration is saved automatically. Next time you open the wizard, click <strong>Restore Previous</strong> to reload all VRMs and GPS file paths without re-entering them.</div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script>
+  const links = document.querySelectorAll('.sidebar a');
+  const sections = document.querySelectorAll('.section');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const a = document.querySelector(`.sidebar a[href="#${e.target.id}"]`);
+        if (a) a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -60% 0px' });
+  sections.forEach(s => obs.observe(s));
+</script>
+</body>
+</html>

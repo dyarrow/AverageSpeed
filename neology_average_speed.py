@@ -1,8 +1,8 @@
 from PyQt5.QtWidgets import QWidget,QMessageBox
-from PyQt5 import uic
+
 import os
 import sys
-from PyQt5 import QtWidgets, uic, QtCore
+from PyQt5 import QtWidgets, QtCore
 from PyQt5.QtWidgets import QMessageBox,QSizePolicy
 from PyQt5.QtCore import *
 from PyQt5.QtGui import * 
@@ -10,6 +10,8 @@ from PyQt5.QtCore import QThread, pyqtSignal, QMutex, QMutexLocker
 from datetime import datetime
 import time
 from PyQt5.QtCore import Qt, QSortFilterProxyModel
+from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtCore import QUrl
 from PyQt5.QtWidgets import QFileDialog,QLineEdit, QPushButton, QApplication,QVBoxLayout, QDialog,QAction,QLabel,QTableWidgetItem
 from openpyxl import Workbook
 
@@ -22,6 +24,7 @@ import sys
 
 from build_config import resourcesPath
 from build_config import applicationPath
+from version import BUILD_VERSION, BUILD_DATE
 
 from baseline_measurement import SectionData,ProcessSectionData
 
@@ -179,7 +182,8 @@ class SettingsDialog(QtWidgets.QDialog):
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
         super(MainWindow, self).__init__()
-        self.ui=uic.loadUi(f"{applicationPath}/ui/neology_average_speed.ui", self)
+        self.setWindowTitle("Neology Average Speed Enforcement")
+        self.resize(1060, 655)
 
         try:
             with open(f"{resourcesPath}/neology_average_speed.json") as c:
@@ -188,59 +192,38 @@ class MainWindow(QtWidgets.QMainWindow):
             print(str(e))
             exit()
 
-        self.tbl_view_section_data=self.findChild(QtWidgets.QTableView,'tbl_view_section_data')
-        self.tbl_view_gps_data=self.findChild(QtWidgets.QTableView,'tbl_view_gps_data')
-        self.btn_import_section_data=self.findChild(QtWidgets.QPushButton,'btn_import_section_data')
-        self.btn_process_vbox_data=self.findChild(QtWidgets.QPushButton,'btn_process_vbox_data')
-        self.btn_export_multiple=self.findChild(QtWidgets.QPushButton,'btn_export_multiple')
-        self.combo_section_selection=self.findChild(QtWidgets.QComboBox,'combo_section_selection')
-        self.combo_section_selection.activated.connect(self.combo_section_selection_changed)
-        self.pb_progress=self.findChild(QtWidgets.QProgressBar,'pb_progress')
-        self.btn_import_section_data.clicked.connect(self.import_section_data)
-        self.btn_export_multiple.clicked.connect(self.export_multiple)
-        self.btn_process_vbox_data.clicked.connect(self.import_vbox_data)
+        self._build_ui()
 
-
-        self.tbl_view_section_data_proxy=CustomProxyModel()
+        # ── Proxy models for Baseline Measurement tab ──────────────────────
+        self.tbl_view_section_data_proxy = CustomProxyModel()
         self.tbl_view_section_data_proxy_header = self.tbl_view_section_data.horizontalHeader()
-
-        
-        self.tbl_view_gps_data_proxy=CustomProxyModel()
+        self.tbl_view_gps_data_proxy = CustomProxyModel()
         self.tbl_view_gps_data_proxy_header = self.tbl_view_gps_data.horizontalHeader()
 
-        self.section_data=[]
-
+        # ── State ──────────────────────────────────────────────────────────
+        self.section_data = []
         self.progress_bar_value = 0
-        self.no_threads=30
+        self.no_threads = 30
         self.vbox_processing_threads = {}
         self.vbox_processing_objects = {}
         self.thread_progress = {}
-        self.vbox={}
+        self.vbox = {}
         self.mutex = QMutex()
-
-        self.data=[]
+        self.data = []
         self._last_vrm_groups = []
 
-        # Tighten layout margins and spacing in code (uic doesn't support these in .ui files)
-        for name, margins, spacing in [
-            ('verticalLayout',              (0,0,0,0), 0),
-            ('verticalLayout_4',            (6,6,6,4), 4),
-            ('horizontalLayout_3',          (0,0,0,0), 4),
-            ('hl_compare',                  (6,4,6,4), 4),
-            ('hl_vehicle',                  (6,4,6,4), 4),
-            ('hl_export',                   (6,4,6,4), 4),
-            ('horizontalLayout_validation', (6,4,6,4), 6),
-        ]:
-            widget = self.findChild(QtWidgets.QLayout, name)
-            if widget:
-                widget.setContentsMargins(*margins)
-                widget.setSpacing(spacing)
+        self.pbAverageSpeedValidation = None  # replaced by QProgressDialog at runtime
+        self.btn_save_kml.setEnabled(False)
+        self.btn_export_validation_data.setEnabled(False)
+        self.btn_export_vbox_cut.setEnabled(False)
 
-        # Hide Baseline Measurement tab - uncomment to re-enable
-        self.tabWidget = self.findChild(QtWidgets.QTabWidget, 'tabWidget')
-        self.tabWidget.setTabVisible(0, False)
+        self.validation_headers = ['Passage','Pri Entry Time','Sec Entry Time','Entry Time Diff','Pri Exit Time','Sec Exit Time','Exit Time Diff','VRM','From','To','Vbox Average Spd','Pri OBO Spd','Vbox/Pri Speed % Diff',"Vbox / Pri Speed MPH Diff","Sec OBO Speed","% Pri/Sec Spd Diff","FromVboxCutTime","ToVboxCutTime",'GPS Points','# Errors (low satellite)']
+        self.gps_data_headers = ['Sat #','Epoch','Time','Lat','Long','Speed','Northing','Easting','Altitude']
 
-        # Styling
+    def _build_ui(self):
+        """Build the entire UI in code — no .ui file required."""
+
+        # ── Stylesheet ─────────────────────────────────────────────────────
         self.setStyleSheet("""
             QWidget {
                 font-family: 'Segoe UI', Arial, sans-serif;
@@ -280,20 +263,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 color: #bbb;
                 border-color: #e5e5e5;
                 background-color: #fafafa;
-            }
-            QPushButton#btn_file_check, QPushButton#btn_wizard {
-                background-color: #0078d4;
-                border-color: #0067b8;
-                color: #fff;
-                font-weight: 600;
-            }
-            QPushButton#btn_file_check:hover, QPushButton#btn_wizard:hover {
-                background-color: #106ebe;
-            }
-            QPushButton#btn_file_check:disabled, QPushButton#btn_wizard:disabled {
-                background-color: #cce4f7;
-                border-color: #cce4f7;
-                color: #fff;
             }
             QProgressBar {
                 border: 1px solid #e0e0e0;
@@ -394,55 +363,203 @@ class MainWindow(QtWidgets.QMainWindow):
             }
         """)
 
-        #Average Speed Tab
-        self.btn_file_check = self.findChild(QtWidgets.QPushButton,'btn_file_check')
-        self.btn_file_check.clicked.connect(self.btn_file_checkPressed)
-        self.btn_wizard = self.findChild(QtWidgets.QPushButton,'btn_wizard')
-        self.btn_wizard.clicked.connect(self.btn_wizardPressed)
+        # ── Central widget & top-level layout ──────────────────────────────
+        central = QtWidgets.QWidget()
+        self.setCentralWidget(central)
+        root_layout = QtWidgets.QVBoxLayout(central)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
 
-        self.btn_save_kml = self.findChild(QtWidgets.QPushButton,'btn_save_kml')
-        self.btn_save_kml.clicked.connect(self.btn_save_kmlPressed)
+        # ── Tab widget ─────────────────────────────────────────────────────
+        self.tabWidget = QtWidgets.QTabWidget()
+        root_layout.addWidget(self.tabWidget)
 
-        self.btn_export_validation_data = self.findChild(QtWidgets.QPushButton,'btn_export_validation_data')
-        self.btn_export_validation_data.clicked.connect(self.export_validation_data)
-        self.btn_export_vbox_cut = self.findChild(QtWidgets.QPushButton,'btn_export_vbox_cut')
-        self.btn_export_vbox_cut.clicked.connect(self.export_vbox_cut_data)
-        self.tableValidation=self.findChild(QtWidgets.QTableView,'tbl_validation')
+        # ══ Tab 0: Baseline Measurement (hidden) ═══════════════════════════
+        tab0 = QtWidgets.QWidget()
+        tab0_layout = QtWidgets.QVBoxLayout(tab0)
+        tab0_layout.setContentsMargins(6, 6, 6, 6)
+        tab0_layout.setSpacing(4)
 
-        # Install the filterable header once — survives model swaps
+        # Button row
+        btn_row0 = QtWidgets.QHBoxLayout()
+        btn_row0.setSpacing(4)
+        self.btn_import_section_data = QtWidgets.QPushButton("Import Section Data")
+        self.btn_import_section_data.clicked.connect(self.import_section_data)
+        self.btn_process_vbox_data = QtWidgets.QPushButton("Process Vbox Data")
+        self.btn_process_vbox_data.clicked.connect(self.import_vbox_data)
+        self.btn_export_multiple = QtWidgets.QPushButton("Export Section VBO Files")
+        self.btn_export_multiple.clicked.connect(self.export_multiple)
+        btn_row0.addWidget(self.btn_import_section_data)
+        btn_row0.addWidget(self.btn_process_vbox_data)
+        btn_row0.addWidget(self.btn_export_multiple)
+        btn_row0.addStretch()
+        tab0_layout.addLayout(btn_row0)
+
+        # Section data table
+        self.tbl_view_section_data = QtWidgets.QTableView()
+        self.tbl_view_section_data.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.tbl_view_section_data.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.tbl_view_section_data.horizontalHeader().setStretchLastSection(True)
+        self.tbl_view_section_data.verticalHeader().setVisible(False)
+        tab0_layout.addWidget(self.tbl_view_section_data)
+
+        # Combo + progress row
+        combo_row = QtWidgets.QHBoxLayout()
+        self.combo_section_selection = QtWidgets.QComboBox()
+        self.combo_section_selection.activated.connect(self.combo_section_selection_changed)
+        self.pb_progress = QtWidgets.QProgressBar()
+        self.pb_progress.setValue(0)
+        combo_row.addWidget(self.combo_section_selection)
+        combo_row.addWidget(self.pb_progress)
+        tab0_layout.addLayout(combo_row)
+
+        # GPS data table
+        self.tbl_view_gps_data = QtWidgets.QTableView()
+        self.tbl_view_gps_data.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.tbl_view_gps_data.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.tbl_view_gps_data.horizontalHeader().setStretchLastSection(True)
+        self.tbl_view_gps_data.verticalHeader().setVisible(False)
+        tab0_layout.addWidget(self.tbl_view_gps_data)
+
+        self.tabWidget.addTab(tab0, "Baseline Measurement")
+        self.tabWidget.setTabVisible(0, False)
+
+        # ══ Tab 1: Baseline Validation ══════════════════════════════════════
+        tab1 = QtWidgets.QWidget()
+        tab1_layout = QtWidgets.QVBoxLayout(tab1)
+        tab1_layout.setContentsMargins(6, 6, 6, 4)
+        tab1_layout.setSpacing(4)
+
+        # ── Toolbar ────────────────────────────────────────────────────────
+        _tb_ss = (
+            "QToolButton{"
+            "background:#ffffff;color:#333;border:1px solid #d0d0d0;"
+            "border-radius:4px;padding:3px 10px;font-size:8.5pt;max-height:24px;}"
+            "QToolButton:hover{background:#f0f7ff;border-color:#aac4e0;}"
+            "QToolButton:pressed{background:#dceeff;}"
+            "QToolButton:disabled{color:#bbb;border-color:#e5e5e5;background:#fafafa;}"
+            "QToolButton::menu-indicator{width:0;}"
+        )
+
+        def _make_menu_btn(label):
+            btn = QtWidgets.QToolButton()
+            btn.setText(label)
+            btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+            btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            btn.setStyleSheet(_tb_ss)
+            return btn
+
+        toolbar_layout = QtWidgets.QHBoxLayout()
+        toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        toolbar_layout.setSpacing(4)
+
+        # Compare menu
+        compare_btn = _make_menu_btn("⚡ Compare ▾")
+        compare_menu = QtWidgets.QMenu(compare_btn)
+        self.btn_file_check = compare_menu.addAction("Quick Compare")
+        self.btn_file_check.triggered.connect(self.btn_file_checkPressed)
+        self.btn_wizard = compare_menu.addAction("Wizard")
+        self.btn_wizard.triggered.connect(self.btn_wizardPressed)
+        compare_btn.setMenu(compare_menu)
+        toolbar_layout.addWidget(compare_btn)
+
+        # Export menu
+        export_btn = _make_menu_btn("↓ Export ▾")
+        export_menu = QtWidgets.QMenu(export_btn)
+        self.btn_save_kml = export_menu.addAction("Export KML")
+        self.btn_save_kml.triggered.connect(self.btn_save_kmlPressed)
+        self.btn_export_validation_data = export_menu.addAction("Export CSV / XLSX")
+        self.btn_export_validation_data.triggered.connect(self.export_validation_data)
+        self.btn_export_vbox_cut = export_menu.addAction("Export Vbox Cut")
+        self.btn_export_vbox_cut.triggered.connect(self.export_vbox_cut_data)
+        export_btn.setMenu(export_menu)
+        toolbar_layout.addWidget(export_btn)
+
+        # Separator
+        sep = QtWidgets.QFrame()
+        sep.setFrameShape(QtWidgets.QFrame.VLine)
+        sep.setFixedWidth(1)
+        toolbar_layout.addWidget(sep)
+
+        # Enable Validation checkbox
+        self.chk_validation_enabled = QtWidgets.QCheckBox("Enable Validation")
+        self.chk_validation_enabled.stateChanged.connect(self.onValidationEnabledChanged)
+        toolbar_layout.addWidget(self.chk_validation_enabled)
+
+        toolbar_layout.addStretch()
+
+        # Settings button
+        self.btn_settings = QtWidgets.QPushButton("⚙ Settings")
+        self.btn_settings.clicked.connect(self.btnSettingsPressed)
+        toolbar_layout.addWidget(self.btn_settings)
+
+        # Help menu
+        help_btn = _make_menu_btn("? Help ▾")
+        help_menu = QtWidgets.QMenu(help_btn)
+        act_open_help = help_menu.addAction("Open Help")
+        act_open_help.triggered.connect(self._open_help)
+        help_menu.addSeparator()
+        act_about = help_menu.addAction("About")
+        act_about.triggered.connect(self._show_about)
+        help_btn.setMenu(help_menu)
+        toolbar_layout.addWidget(help_btn)
+
+        # Hidden import config button (kept for backward compat)
+        self.btn_import_config_file = QtWidgets.QPushButton("Import Config")
+        self.btn_import_config_file.clicked.connect(self.btnImportConfigFilePressed)
+        self.btn_import_config_file.setVisible(False)
+        toolbar_layout.addWidget(self.btn_import_config_file)
+
+        tab1_layout.addLayout(toolbar_layout)
+
+        # Validation table
+        self.tableValidation = QtWidgets.QTableView()
+        self.tableValidation.setFont(QFont("Segoe UI", 8))
+        self.tableValidation.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.tableValidation.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.tableValidation.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.tableValidation.setSortingEnabled(True)
+        self.tableValidation.horizontalHeader().setMinimumSectionSize(80)
+        self.tableValidation.horizontalHeader().setDefaultSectionSize(80)
+        self.tableValidation.horizontalHeader().setStretchLastSection(True)
+        self.tableValidation.verticalHeader().setVisible(False)
+        self.tableValidation.verticalHeader().setMinimumSectionSize(20)
+        self.tableValidation.verticalHeader().setDefaultSectionSize(20)
+        tab1_layout.addWidget(self.tableValidation)
+
+        self.tabWidget.addTab(tab1, "Baseline Validation")
+        self.tabWidget.setCurrentIndex(1)
+
+        # ── FilterHeaderView installed once ────────────────────────────────
         self._filter_header = FilterHeaderView(Qt.Horizontal, self.tableValidation)
         self.tableValidation.setHorizontalHeader(self._filter_header)
         self._filter_header.filter_clicked.connect(self._show_column_filter)
         self._filter_header.setSectionsClickable(True)
 
-        
-
-
-        #self.dateValidation.setDateTime(QtCore.QDateTime.currentDateTime())
-
-        self.pbAverageSpeedValidation = None  # replaced by progress dialog
-    
-        self.btn_import_config_file = self.findChild(QtWidgets.QPushButton,'btn_import_config_file')
-        self.btn_import_config_file.clicked.connect(self.btnImportConfigFilePressed)
-        self.btn_import_config_file.setVisible(False)
-        self.btn_settings = self.findChild(QtWidgets.QPushButton, 'btn_settings')
-        self.btn_settings.clicked.connect(self.btnSettingsPressed)
-
-        self.chk_validation_enabled = self.findChild(QtWidgets.QCheckBox, 'chk_validation_enabled')
-        self.chk_validation_enabled.stateChanged.connect(self.onValidationEnabledChanged)
-
-        self.btn_save_kml.setEnabled(False)
-        self.btn_export_validation_data.setEnabled(False)
-        self.btn_export_vbox_cut.setEnabled(False)
-
-        #self.validation_headers=['Passage','Date','VRM','Time','From','To','GPS','OBO','% Diff','Points','Errors','Validity']
-        #self.validation_headers=['Passage','Date','VRM','Time','From','To','GPS','OBO','% Diff', "FromVbox","ToVbox",'Points','Errors']
-        self.validation_headers=['Passage','Pri Entry Time','Sec Entry Time','Entry Time Diff','Pri Exit Time','Sec Exit Time','Exit Time Diff','VRM','From','To','Vbox Average Spd','Pri OBO Spd','Vbox/Pri Speed % Diff',"Vbox / Pri Speed MPH Diff","Sec OBO Speed","% Pri/Sec Spd Diff","FromVboxCutTime","ToVboxCutTime",'GPS Points','# Errors (low satellite)']
-        self.gps_data_headers=['Sat #','Epoch','Time','Lat','Long','Speed','Northing','Easting','Altitude']
-
-
-        #End Average Speed Tab
-
+        # ── Status bar ─────────────────────────────────────────────────────
+        self._status_bar = QtWidgets.QStatusBar()
+        self._status_bar.setSizeGripEnabled(False)
+        self._status_bar.setStyleSheet(
+            "QStatusBar { background: #f5f5f5; border-top: 1px solid #e0e0e0; "
+            "font-size: 8pt; color: #555; padding: 0 8px; max-height: 22px; }"
+            "QStatusBar::item { border: none; }"
+        )
+        self.setStatusBar(self._status_bar)
+        self._sb_passages = QtWidgets.QLabel("No comparison run")
+        self._sb_passed   = QtWidgets.QLabel()
+        self._sb_failed   = QtWidgets.QLabel()
+        self._sb_time     = QtWidgets.QLabel()
+        self._sb_obo      = QtWidgets.QLabel()
+        for lbl in [self._sb_passages, self._sb_passed, self._sb_failed, self._sb_time, self._sb_obo]:
+            lbl.setStyleSheet("padding: 0 6px;")
+        self._status_bar.addWidget(self._sb_passages)
+        self._status_bar.addWidget(self._make_sb_sep())
+        self._status_bar.addWidget(self._sb_passed)
+        self._status_bar.addWidget(self._make_sb_sep())
+        self._status_bar.addWidget(self._sb_failed)
+        self._status_bar.addPermanentWidget(self._sb_obo)
+        self._status_bar.addPermanentWidget(self._make_sb_sep())
+        self._status_bar.addPermanentWidget(self._sb_time)
 
 #region Baseline Measurement 
     def import_section_data(self):
@@ -553,6 +670,146 @@ class MainWindow(QtWidgets.QMainWindow):
 #endregion
 
 #region Link Validation
+    def _row_passes(self, row):
+        """Return True if a result row passes the current threshold settings."""
+        try:
+            cfg      = self.commissioningConfig["AverageSpeed"]
+            bp       = float(cfg.get("speed_breakpoint",  62))
+            lp       = float(cfg.get("threshold_low_pos",  3))
+            ln       = float(cfg.get("threshold_low_neg",  3))
+            hp       = float(cfg.get("threshold_high_pos", 3))
+            hn       = float(cfg.get("threshold_high_neg", 3))
+            pct_only = cfg.get("pct_only", "false").lower() == "true"
+            pri_speed = float(row[11])
+            pct_diff  = float(row[12])
+            mph_diff  = float(row[13])
+            if not self.chk_validation_enabled.isChecked():
+                return True
+            if pct_only:
+                return -hn <= pct_diff <= hp
+            if pri_speed <= bp:
+                return -ln <= mph_diff <= lp
+            return -hn <= pct_diff <= hp
+        except (ValueError, TypeError, IndexError):
+            return True
+
+    def _show_friendly_error(self, raw_error):
+        """Show a user-friendly error dialog, translating common exceptions."""
+        raw = str(raw_error)
+
+        if "'Matched'" in raw or "Matched" in raw and "KeyError" in raw:
+            title = "OBO File Error — Missing Sheet"
+            msg   = ("The OBO file does not contain a sheet named <b>Matched</b>.<br><br>"
+                     "Please check the OBO export settings and ensure the correct file has been selected.")
+
+        elif "is not in list" in raw or "ValueError" in raw and any(
+                col in raw for col in ["Entry Primary Time", "Exit Primary Time",
+                                       "Primary Speed", "Secondary Speed",
+                                       "LP Number", "LP Hash", "Primary Camera ID"]):
+            # Extract the column name if possible
+            import re
+            match = re.search(r"'([^']+)' is not in list", raw)
+            col = match.group(1) if match else "a required column"
+            title = "OBO File Error — Missing Column"
+            msg   = (f"The OBO file is missing the column: <b>{col}</b><br><br>"
+                     "Required columns are:<br>"
+                     "<tt>LP Number, LP Hash, Entry Primary Time, Entry Secondary Time,<br>"
+                     "Exit Primary Time, Exit Secondary Time, Primary Speed,<br>"
+                     "Secondary Speed, Primary Camera ID</tt><br><br>"
+                     "Please check the OBO export settings.")
+
+        elif "No passages found" in raw or "no passages" in raw.lower():
+            title = "No Passages Found"
+            msg   = ("No passages were found in the OBO data matching the entered VRM or hash.<br><br>"
+                     "Check that:<br>"
+                     "• The VRM or hash is entered correctly<br>"
+                     "• The OBO export covers the correct time window<br>"
+                     "• The correct OBO file has been selected")
+
+        elif "GPS" in raw or "vbo" in raw.lower() or "csv" in raw.lower():
+            title = "GPS File Error"
+            msg   = (f"There was a problem reading the GPS file:<br><br>"
+                     f"<tt>{raw}</tt><br><br>"
+                     "Ensure the file is a valid VBox .vbo or OxTS .csv file.")
+
+        else:
+            title = "Comparison Failed"
+            msg   = (f"The comparison failed with the following error:<br><br>"
+                     f"<tt>{raw}</tt>")
+
+        self.showRichErrorMessagebox(title, msg)
+
+    def _make_sb_sep(self):
+        sep = QtWidgets.QFrame()
+        sep.setFrameShape(QtWidgets.QFrame.VLine)
+        sep.setStyleSheet("color: #d0d0d0; max-width: 1px; margin: 3px 2px;")
+        return sep
+
+    def _update_status_bar(self, passages, passed, failed, obo_file=None):
+        self._sb_passages.setText(f"Passages: {passages}")
+        self._sb_passed.setText(f"✔ Passed: {passed}")
+        self._sb_passed.setStyleSheet("padding: 0 6px; color: #107c10; font-weight: 600;")
+        self._sb_failed.setText(f"✖ Failed: {failed}")
+        self._sb_failed.setStyleSheet(
+            "padding: 0 6px; color: #c50f1f; font-weight: 600;"
+            if failed > 0 else "padding: 0 6px; color: #107c10; font-weight: 600;"
+        )
+        import datetime
+        self._sb_time.setText(f"Last run: {datetime.datetime.now().strftime('%H:%M:%S')}")
+        if obo_file:
+            import os
+            self._sb_obo.setText(f"OBO: {os.path.basename(obo_file)}")
+
+    def _open_help(self):
+        import os
+        help_path = os.path.join(applicationPath, "help.html")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(help_path))
+
+    def _show_about(self):
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("About Neology Average Speed Enforcement")
+        dlg.setFixedWidth(420)
+        dlg.setWindowFlags(dlg.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.setContentsMargins(24, 20, 24, 16)
+        layout.setSpacing(10)
+
+        title = QtWidgets.QLabel("Neology Average Speed Enforcement")
+        title.setStyleSheet("font-size: 11pt; font-weight: 600;")
+        layout.addWidget(title)
+
+        version_lbl = QtWidgets.QLabel(f"Version {BUILD_VERSION}  ·  {BUILD_DATE}")
+        version_lbl.setStyleSheet("color: #555; font-size: 8.5pt;")
+        layout.addWidget(version_lbl)
+
+        layout.addSpacing(4)
+
+        body_style = "font-size: 8.5pt; color: #333;"
+        for text in [
+            "Copyright © 2026 Neology Ltd. All rights reserved.",
+            "This program uses Qt version 5.15.2 via PyQt5.",
+            "Qt is a C++ toolkit for cross-platform application development.",
+            "PyQt5 and Qt are licensed under the GNU General Public License (GPL) version 3. "
+            "This application is distributed under the terms of the GPL v3. "
+            'See <a href="https://gnu.org/licenses/gpl-3.0">gnu.org/licenses/gpl-3.0</a>.',
+            'For an overview of Qt licensing, see <a href="https://qt.io/licensing">qt.io/licensing</a>.',
+            'Python is used under the Python Software Foundation Licence. '
+            'See <a href="https://python.org">python.org</a>.',
+        ]:
+            lbl = QtWidgets.QLabel(text)
+            lbl.setStyleSheet(body_style)
+            lbl.setWordWrap(True)
+            lbl.setOpenExternalLinks(True)
+            layout.addWidget(lbl)
+
+        layout.addSpacing(4)
+        btn_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok)
+        btn_box.accepted.connect(dlg.accept)
+        layout.addWidget(btn_box, alignment=Qt.AlignRight)
+
+        dlg.exec_()
+
     def btnSettingsPressed(self):
         dlg = SettingsDialog(self.commissioningConfig, f"{resourcesPath}/neology_average_speed.json", self)
         if dlg.exec_() == QtWidgets.QDialog.Accepted:
@@ -628,12 +885,18 @@ class MainWindow(QtWidgets.QMainWindow):
         page.lbl_status.setText(message)
 
     def _startComparison(self, OBODataFilenames, vrm_groups):
+        self._last_obo_file = OBODataFilenames[0] if OBODataFilenames else None
         self.btn_save_kml.setEnabled(False)
         self.btn_export_validation_data.setEnabled(False)
         self.btn_export_vbox_cut.setEnabled(False)
         self.btn_file_check.setEnabled(False)
         self.btn_wizard.setEnabled(False)
         self.tableValidation.setModel(None)
+
+        self._pending_groups = list(vrm_groups)
+        self._obo_filenames  = OBODataFilenames
+        self._group_index    = 0
+        self._total_groups   = len(vrm_groups)
 
         self._progress_dialog = None
         if not (hasattr(self, '_wizard') and self._wizard is not None):
@@ -645,14 +908,44 @@ class MainWindow(QtWidgets.QMainWindow):
             self._progress_dialog.setMinimumDuration(0)
             self._progress_dialog.setValue(0)
             self._progress_dialog.show()
-        self.AverageSpeedValidationManualCheckCompare=AverageSpeedLinkValidationManualComparison(OBODataFilenames, self.commissioningConfig, vrm_groups)
-        self.AverageSpeedValidationManualCheckCompare.updateAverageSpeedValidationPB.connect(self.updateAverageSpeedValidationPB)
+
+        self._run_next_group()
+
+    def _run_next_group(self):
+        if self._group_index >= self._total_groups:
+            return
+
+        group      = self._pending_groups[self._group_index]
+        plate      = group.get('plate', '')
+        plate_hash = group.get('plate_hash', '')
+        gps_files  = group.get('gps_files', [])
+
+        self.AverageSpeedValidationManualCheckCompare = AverageSpeedLinkValidationManualComparison(
+            gps_files, self._obo_filenames, self.commissioningConfig, plate, plate_hash
+        )
+        self.AverageSpeedValidationManualCheckCompare.updateAverageSpeedValidationPB.connect(self._on_group_progress)
         self.AverageSpeedValidationManualCheckCompare.updateValidationTable.connect(self.updateValidationTable)
-        self.AverageSpeedValidationManualCheckCompare.validationThreadFinished.connect(self.validationThreadFinished)
+        self.AverageSpeedValidationManualCheckCompare.validationThreadFinished.connect(self._on_group_finished)
         if hasattr(self, '_wizard') and self._wizard is not None:
             self.AverageSpeedValidationManualCheckCompare.updateAverageSpeedValidationPB.connect(self._onWizardProgress)
         self.AverageSpeedValidationManualCheckCompare.start()
 
+    def _on_group_progress(self, str_val):
+        group_pct  = str_val.get('progress', 0)
+        slice_size = 95 / max(self._total_groups, 1)
+        overall    = int(self._group_index * slice_size + group_pct * slice_size / 100)
+        msg        = str_val.get('message', '')
+        if self._total_groups > 1:
+            msg = f"[{self._group_index + 1}/{self._total_groups}] {msg}"
+        self.updateAverageSpeedValidationPB({'progress': overall, 'message': msg})
+
+    def _on_group_finished(self, result):
+        if result['Result']:
+            self._group_index += 1
+            if self._group_index < self._total_groups:
+                self._run_next_group()
+                return
+        self.validationThreadFinished(result)
 
 
 
@@ -749,6 +1042,9 @@ class MainWindow(QtWidgets.QMainWindow):
             for row in range(self.model.rowCount(None)):
                 for col in range(len(self.validation_headers)):
                     self.model.change_color(row, col, None)
+            self._sb_passages.setText(f"Passages: {self.model.rowCount(None)}")
+            self._sb_passed.setText("")
+            self._sb_failed.setText("")
             return
 
         cfg = self.commissioningConfig["AverageSpeed"]
@@ -781,6 +1077,13 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.model.change_color(row, col, colour)
             except (ValueError, TypeError, IndexError):
                 pass
+
+        # Refresh status bar to reflect updated pass/fail counts
+        total  = self.model.rowCount(None)
+        passed = sum(1 for row in self.linkValidationData.validationResultData
+                     if self._row_passes(row))
+        self._update_status_bar(total, passed, total - passed,
+                                getattr(self, '_last_obo_file', None))
 
     def _show_column_filter_at_pos(self, pos):
         header = self.tableValidation.horizontalHeader()
@@ -859,17 +1162,32 @@ class MainWindow(QtWidgets.QMainWindow):
                         except (ValueError, TypeError, IndexError):
                             passed += 1
                     failed = total - passed
-                    self._wizard.show_results(total, passed, failed, self.commissioningConfig)
+                    self._wizard.show_results(total, passed, failed, self.commissioningConfig,
+                                              validation_enabled=self.chk_validation_enabled.isChecked())
                     self._last_vrm_groups = self._wizard.get_vrm_groups()
                     self._wizard.mark_complete()
                     self._wizard.show()
+
+                # Update status bar
+                total = len(self.linkValidationData.validationResultData)
+                if self.chk_validation_enabled.isChecked():
+                    passed = sum(1 for row in self.linkValidationData.validationResultData
+                                 if self._row_passes(row))
+                    self._update_status_bar(total, passed, total - passed,
+                                            getattr(self, '_last_obo_file', None))
+                else:
+                    self._sb_passages.setText(f"Passages: {total}")
+                    self._sb_passed.setText("")
+                    self._sb_failed.setText("")
+                    import datetime
+                    self._sb_time.setText(f"Last run: {datetime.datetime.now().strftime('%H:%M:%S')}")
 
             if "DisplayMessage" in result:
                 self.showInfoMessagebox(result['Title'], result['Text'])
         else:
             self.btn_save_kml.setEnabled(False)
             self.btn_export_validation_data.setEnabled(False)
-            self.showErrorMessagebox(result['Title'], result['Text'])
+            self._show_friendly_error(result.get('Text', ''))
 
 
     def showRichErrorMessagebox(self, title, maintext):

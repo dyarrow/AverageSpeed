@@ -518,9 +518,20 @@ class Page_Results(QWizardPage):
             elif item.layout():
                 self._clear_layout(item.layout())
 
-    def show_results(self, total, passed, failed, config=None):
+    def show_results(self, total, passed, failed, config=None, validation_enabled=True):
         self._clear_layout(self.results_layout)
         self._clear_layout(self.rules_layout)
+
+        if not validation_enabled:
+            lbl = QLabel("Validation is disabled.\nResults have been loaded into the main table.")
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet("color: #555; font-size: 10pt;")
+            passages_lbl = QLabel(f"Total passages found: {total}")
+            passages_lbl.setAlignment(Qt.AlignCenter)
+            passages_lbl.setStyleSheet("font-size: 10pt;")
+            self.results_layout.addWidget(lbl)
+            self.results_layout.addWidget(passages_lbl)
+            return
 
         grid = QGridLayout()
 
@@ -631,5 +642,5 @@ class ValidationWizard(QWizard):
     def mark_failed(self, message):
         self.page(self.PROGRESS_PAGE).mark_failed(message)
 
-    def show_results(self, total, passed, failed, config=None):
-        self.page(self.RESULTS_PAGE).show_results(total, passed, failed, config)
+    def show_results(self, total, passed, failed, config=None, validation_enabled=True):
+        self.page(self.RESULTS_PAGE).show_results(total, passed, failed, config, validation_enabled)
