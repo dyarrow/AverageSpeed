@@ -30,6 +30,22 @@ class WSDOTInputData:
     LP_HASH="LP Hash"
 
 
+class MDOTInputData:
+    """Column names for the MDOT/reduced OBO format — no secondary times or speeds."""
+    ENTRY_PRI_TIME = "Entry Primary Time"
+    EXIT_PRI_TIME  = "Exit Primary Time"
+    AVG_SPEED      = "Average Speed"
+    LP_NUMBER      = "LP Number"
+    LP_HASH        = "LP Hash"
+
+    @staticmethod
+    def detect(headers):
+        """Return True if this looks like an MDOT-format OBO file."""
+        return (MDOTInputData.AVG_SPEED in headers and
+                WSDOTInputData.PRI_SPEED not in headers and
+                WSDOTInputData.ENTRY_SEC_TIME not in headers)
+
+
 class linkValidationData:
     def __init__(self):
         super().__init__()
@@ -39,6 +55,7 @@ class linkValidationData:
         self.ercuData=[]
         self.ercuRawDataFile=[]
         self.validationResultData=[]
+        self.vboxCutData=[]
         self.instationIP=""
         self.username=""
         self.password=""
@@ -298,69 +315,124 @@ class linkValidation:
     def importERCUFile(self, file):
         #Check if input file is WSDOT or SpeedSpike
         if file.endswith(".xls") == True or file.endswith(".xlsx") == True:
-            #Process WSDOT excel file
             workbook=openpyxl.load_workbook(file)
-            sheets = workbook.sheetnames
-            #sheet = workbook[sheets[0]]
             sheet = workbook['Matched']
 
             list_values = list(sheet.values)
             headers=list(list_values[0])
-            
-            #self.plate_col=headers.index(WSDOTInputData.PLATE)
 
+            # ── Detect OBO format ─────────────────────────────────────────────
+            if MDOTInputData.detect(headers):
+                # MDOT reduced format — no secondary times or speeds
+                self.validationData.secondary_data_missing = True
+                lp_number_col      = headers.index(MDOTInputData.LP_NUMBER)
+                lp_hash_col        = headers.index(MDOTInputData.LP_HASH)
+                entry_pri_time_col = headers.index(MDOTInputData.ENTRY_PRI_TIME)
+                exit_pri_time_col  = headers.index(MDOTInputData.EXIT_PRI_TIME)
+                pri_speed_col      = headers.index(MDOTInputData.AVG_SPEED)
+                # Use first column for camera ID if available, else blank
+                pri_cam_id_col     = None
 
-            self.entry_pri_time_col=headers.index(WSDOTInputData.ENTRY_PRI_TIME)
-            self.entry_sec_time_col=headers.index(WSDOTInputData.ENTRY_SEC_TIME)
-            self.exit_pri_time_col=headers.index(WSDOTInputData.EXIT_PRI_TIME)
-            self.exit_sec_time_col=headers.index(WSDOTInputData.EXIT_SEC_TIME)
-            self.pri_speed_col=headers.index(WSDOTInputData.PRI_SPEED)
-            self.sec_speed_col=headers.index(WSDOTInputData.SEC_SPEED)
-            self.pri_camera_id_col=headers.index(WSDOTInputData.PRI_CAM_ID)
-            self.lp_number_col=headers.index(WSDOTInputData.LP_NUMBER)
-            self.lp_hash_col=headers.index(WSDOTInputData.LP_HASH)
+                ercu_data = [list(elem) for elem in list_values[1:]]
+                passage_id = 1
+                for row in ercu_data:
+                    if row[0] is not None:
+                        if str(row[lp_number_col]) == str(self.plate) or str(row[lp_hash_col]) == str(self.plate_hash):
+                            if isinstance(row[entry_pri_time_col], str):
+                                entry_pri_utc_time = datetime.strptime(row[entry_pri_time_col], "%Y-%m-%d %H:%M:%S.%f")
+                                exit_pri_utc_time  = datetime.strptime(row[exit_pri_time_col],  "%Y-%m-%d %H:%M:%S.%f")
+                            else:
+                                entry_pri_utc_time = row[entry_pri_time_col]
+                                exit_pri_utc_time  = row[exit_pri_time_col]
+                            obo_offset = float(self.validationData.commissioningConfig['AverageSpeed'].get('obo_time_offset', '0'))
+                            if obo_offset:
+                                entry_pri_utc_time += timedelta(hours=obo_offset)
+                                exit_pri_utc_time  += timedelta(hours=obo_offset)
 
-            ercu_data=[list(elem) for elem in list_values[1:]]
-            
-            passage_id=1
-            for row in ercu_data:
-                if row[0] != None:
-                    #Check if passage is a VRM we are interested in
-                    if str(row[self.lp_number_col]) == str(self.plate) or str(row[self.lp_hash_col]) == str(self.plate_hash):
-                        #Convert datetime strings to datetime types
+                            vrm       = str(row[lp_number_col])
+                            pri_speed = float(row[pri_speed_col])
 
-                        if isinstance(row[self.entry_pri_time_col],str) == True:
-                            entry_pri_utc_time = datetime.strptime(row[self.entry_pri_time_col], "%Y-%m-%d %H:%M:%S.%f")
-                            exit_pri_utc_time = datetime.strptime(row[self.exit_pri_time_col], "%Y-%m-%d %H:%M:%S.%f")
-                        else:
-                            entry_pri_utc_time = row[self.entry_pri_time_col]
-                            exit_pri_utc_time = row[self.exit_pri_time_col]
+                            self.validationData.ercuData.append({
+                                "PassageID":     vrm + "_" + str(passage_id),
+                                "DateTime":      row[entry_pri_time_col],
+                                "VRM":           vrm,
+                                "Speed":         row[pri_speed_col],
+                                "SecSpeed":      "",
+                                "PriSecSpeedDiff": "",
+                                "FromRSE":       "",
+                                "FromTime":      entry_pri_utc_time,
+                                "ToRSE":         "NA",
+                                "ToTime":        exit_pri_utc_time,
+                                "EntrySecTime":  "",
+                                "ExitSecTime":   "",
+                                "EntryTimeDiff": "",
+                                "ExitTimeDiff":  "",
+                            })
+                            passage_id += 1
 
-                        if isinstance(row[self.entry_sec_time_col],str) == True:
-                            entry_sec_utc_time = datetime.strptime(row[self.entry_sec_time_col], "%Y-%m-%d %H:%M:%S.%f")
-                            exit_sec_utc_time = datetime.strptime(row[self.exit_sec_time_col], "%Y-%m-%d %H:%M:%S.%f")
-                        else:
-                            entry_sec_utc_time = row[self.entry_sec_time_col]
-                            exit_sec_utc_time = row[self.exit_sec_time_col]
+            else:
+                # Standard WSDOT format
+                self.validationData.secondary_data_missing = False
+                entry_pri_time_col = headers.index(WSDOTInputData.ENTRY_PRI_TIME)
+                entry_sec_time_col = headers.index(WSDOTInputData.ENTRY_SEC_TIME)
+                exit_pri_time_col  = headers.index(WSDOTInputData.EXIT_PRI_TIME)
+                exit_sec_time_col  = headers.index(WSDOTInputData.EXIT_SEC_TIME)
+                pri_speed_col      = headers.index(WSDOTInputData.PRI_SPEED)
+                sec_speed_col      = headers.index(WSDOTInputData.SEC_SPEED)
+                pri_camera_id_col  = headers.index(WSDOTInputData.PRI_CAM_ID)
+                lp_number_col      = headers.index(WSDOTInputData.LP_NUMBER)
+                lp_hash_col        = headers.index(WSDOTInputData.LP_HASH)
 
-                        #entry_pri_utc_time = entry_pri_utc_time + timedelta(seconds=18)
-                        #exit_pri_utc_time = exit_pri_utc_time + timedelta(seconds=18)
-                        #entry_sec_utc_time = entry_sec_utc_time + timedelta(seconds=18)
-                        #exit_sec_utc_time = exit_sec_utc_time + timedelta(seconds=18)
-                        
+                ercu_data = [list(elem) for elem in list_values[1:]]
+                passage_id = 1
+                for row in ercu_data:
+                    if row[0] is not None:
+                        if str(row[lp_number_col]) == str(self.plate) or str(row[lp_hash_col]) == str(self.plate_hash):
+                            if isinstance(row[entry_pri_time_col], str):
+                                entry_pri_utc_time = datetime.strptime(row[entry_pri_time_col], "%Y-%m-%d %H:%M:%S.%f")
+                                exit_pri_utc_time  = datetime.strptime(row[exit_pri_time_col],  "%Y-%m-%d %H:%M:%S.%f")
+                            else:
+                                entry_pri_utc_time = row[entry_pri_time_col]
+                                exit_pri_utc_time  = row[exit_pri_time_col]
 
-                        entry_time_diff=entry_pri_utc_time-entry_sec_utc_time
-                        exit_time_diff=exit_pri_utc_time-exit_sec_utc_time
+                            if isinstance(row[entry_sec_time_col], str):
+                                entry_sec_utc_time = datetime.strptime(row[entry_sec_time_col], "%Y-%m-%d %H:%M:%S.%f")
+                                exit_sec_utc_time  = datetime.strptime(row[exit_sec_time_col],  "%Y-%m-%d %H:%M:%S.%f")
+                            else:
+                                entry_sec_utc_time = row[entry_sec_time_col]
+                                exit_sec_utc_time  = row[exit_sec_time_col]
 
-                        vrm=str(row[self.lp_number_col])
+                            obo_offset = float(self.validationData.commissioningConfig['AverageSpeed'].get('obo_time_offset', '0'))
+                            if obo_offset:
+                                entry_pri_utc_time += timedelta(hours=obo_offset)
+                                exit_pri_utc_time  += timedelta(hours=obo_offset)
+                                entry_sec_utc_time += timedelta(hours=obo_offset)
+                                exit_sec_utc_time  += timedelta(hours=obo_offset)
+                            entry_time_diff = entry_pri_utc_time - entry_sec_utc_time
+                            exit_time_diff  = exit_pri_utc_time  - exit_sec_utc_time
 
-                        pri_speed=float(row[self.pri_speed_col])
-                        sec_speed=float(row[self.sec_speed_col])
-                        diff=(sec_speed-pri_speed)*100/pri_speed
+                            vrm       = str(row[lp_number_col])
+                            pri_speed = float(row[pri_speed_col])
+                            sec_speed = float(row[sec_speed_col])
+                            diff      = (sec_speed - pri_speed) * 100 / pri_speed
 
-
-                        self.validationData.ercuData.append({"PassageID":vrm + "_" + str(passage_id), "DateTime":row[self.entry_pri_time_col],"VRM":vrm,"Speed":row[self.pri_speed_col],"SecSpeed":sec_speed,"PriSecSpeedDiff":diff,"FromRSE":row[self.pri_camera_id_col],"FromTime":entry_pri_utc_time,"ToRSE":"NA","ToTime":exit_pri_utc_time,"EntrySecTime":entry_sec_utc_time,"ExitSecTime":exit_sec_utc_time,"EntryTimeDiff":entry_time_diff.total_seconds(),"ExitTimeDiff":exit_time_diff.total_seconds()})                        
-                        passage_id+=1
+                            self.validationData.ercuData.append({
+                                "PassageID":     vrm + "_" + str(passage_id),
+                                "DateTime":      row[entry_pri_time_col],
+                                "VRM":           vrm,
+                                "Speed":         row[pri_speed_col],
+                                "SecSpeed":      sec_speed,
+                                "PriSecSpeedDiff": diff,
+                                "FromRSE":       row[pri_camera_id_col],
+                                "FromTime":      entry_pri_utc_time,
+                                "ToRSE":         "NA",
+                                "ToTime":        exit_pri_utc_time,
+                                "EntrySecTime":  entry_sec_utc_time,
+                                "ExitSecTime":   exit_sec_utc_time,
+                                "EntryTimeDiff": entry_time_diff.total_seconds(),
+                                "ExitTimeDiff":  exit_time_diff.total_seconds(),
+                            })
+                            passage_id += 1
         else:
             ERCUFile = open(file)
             #Process Speed Spike
@@ -402,7 +474,8 @@ class linkValidation:
     def doComparison(self):
         currentProgress=int((self.UI.pbTotal-1/self.UI.pbTotal)*100)
         self.UI.updateAverageSpeedValidationPB.emit({"progress":currentProgress,"message":"Calculating Passages"})
-        f = open(f"{self.plate}_vbox_cut_data.csv","w")
+        import io
+        f = io.StringIO()
         f.write("PassageID,Sats,Time,Speed,Lat,Long\n")
 
 
@@ -454,6 +527,11 @@ class linkValidation:
                 #self.validationData.validationResultData.append([passage['PassageID'],str(passage['DateTime']).split(' ')[0],passage['VRM'],str(passage['DateTime']).split(' ')[1],passage['FromRSE'],passage['ToRSE'],round(avSpeed,3),passage['Speed'],str(round(percentDiff,3)),vbox_start,vbox_end,totalGPSPoints,gpsErrorPoints,validity])
                 #self.validationData.validationResultData.append([passage['PassageID'],str(passage['DateTime']).split(' ')[0],passage['VRM'],str(passage['DateTime']).split(' ')[1],passage['FromRSE'],passage['ToRSE'],round(avSpeed,3),passage['Speed'],str(round(percentDiff,3)),vbox_start,vbox_end,totalGPSPoints,gpsErrorPoints])
                 self.validationData.validationResultData.append([passage['PassageID'],str(passage['DateTime']),str(passage['EntrySecTime'])[:-3],passage['EntryTimeDiff'], str(passage['ToTime'])[:-3],str(passage['ExitSecTime'])[:-3],passage['ExitTimeDiff'],str(passage['VRM']),passage['FromRSE'],passage['ToRSE'],round(avSpeed,3),passage['Speed'],str(round(percentDiff,3)),speed_diff,passage['SecSpeed'],passage['PriSecSpeedDiff'],vbox_start[:-3],vbox_end[:-3],totalGPSPoints,gpsErrorPoints])
+                # Store cut data in memory for export button
+                if not hasattr(self.validationData, 'vboxCutData') or self.validationData.vboxCutData is None:
+                    self.validationData.vboxCutData = []
+                for pt in vbox_cut_data:
+                    self.validationData.vboxCutData.append([passage['PassageID'],pt['SatNumber'],pt['Time'],pt['Speed'],pt['Lat'],pt['Long']])
         
                 self.validation_headers=['Passage','Pri Entry Time','Sec Entry Time','Entry Time Diff','Pri Exit Time','Sec Exit Time','Exit Time Diff','VRM','From','To','GPS Spd','Pri ERCU Spd','% Diff',"Spd Diff","Sec Spd","% Pri/Sec Spd Diff","FromVbox","ToVbox",'Points','Errors']
         

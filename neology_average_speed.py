@@ -765,8 +765,17 @@ class MainWindow(QtWidgets.QMainWindow):
             self._sb_obo.setText(f"OBO: {os.path.basename(obo_file)}")
 
     def _open_help(self):
-        import os
-        help_path = os.path.join(applicationPath, "help.html")
+        import os, sys
+        if getattr(sys, 'frozen', False):
+            # Running as built exe — help.html is next to the exe
+            base = os.path.dirname(sys.executable)
+        else:
+            base = applicationPath
+        help_path = os.path.join(base, "help.html")
+        if not os.path.exists(help_path):
+            QtWidgets.QMessageBox.warning(self, "Help Not Found",
+                f"Could not find help.html at:\n{help_path}")
+            return
         QDesktopServices.openUrl(QUrl.fromLocalFile(help_path))
 
     def _show_about(self):
@@ -865,6 +874,10 @@ class MainWindow(QtWidgets.QMainWindow):
         OBODataFilenames, check = QFileDialog.getOpenFileNames(self, "Select OBO Data File", "", "OBO Files (*.txt *.xlsx);;Text Files (*.txt);;Excel Files (*.xlsx);;All Files (*.*)")
         if not check: return
 
+        # Detect MDOT format and ask for timezone offset if needed
+        obo_offset = self._detect_and_ask_obo_timezone(OBODataFilenames)
+        self.commissioningConfig["AverageSpeed"]["obo_time_offset"] = str(obo_offset)
+
         self._wizard = None
         vrm_groups = [{"plate": vrm, "plate_hash": plate_hash, "gps_files": GPSFilenames}]
         self._startComparison(OBODataFilenames, vrm_groups)
@@ -877,6 +890,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._wizard.show()
 
     def _onWizardComparisonRequested(self):
+        # Apply OBO time offset from wizard page to config before comparing
+        self.commissioningConfig["AverageSpeed"]["obo_time_offset"] = str(
+            self._wizard.get_obo_time_offset()
+        )
         self._startComparison(self._wizard.get_obo_files(), self._wizard.get_vrm_groups())
 
     def _onWizardProgress(self, str_val):
@@ -887,6 +904,63 @@ class MainWindow(QtWidgets.QMainWindow):
         page = self._wizard.page(self._wizard.PROGRESS_PAGE)
         page.progress_bar.setValue(progress)
         page.lbl_status.setText(message)
+
+    def _detect_and_ask_obo_timezone(self, filenames):
+        """Check if any OBO file is MDOT reduced format. If so ask for timezone offset and return it. Otherwise return 0."""
+        try:
+            import openpyxl
+            from link_validation import MDOTInputData
+            for f in filenames:
+                if not f.lower().endswith(('.xlsx', '.xls')):
+                    continue
+                wb = openpyxl.load_workbook(f, read_only=True)
+                if 'Matched' not in wb.sheetnames:
+                    continue
+                rows = list(wb['Matched'].rows)
+                if not rows:
+                    continue
+                headers = [c.value for c in rows[0]]
+                if MDOTInputData.detect(headers):
+                    return self._ask_obo_timezone_offset()
+        except Exception:
+            pass
+        return 0.0
+
+    def _ask_obo_timezone_offset(self):
+        """Show timezone offset dialog and return the chosen offset in hours."""
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("OBO Timezone Offset")
+        dlg.setFixedWidth(340)
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.setSpacing(10)
+        layout.setContentsMargins(16, 16, 16, 12)
+
+        lbl = QtWidgets.QLabel(
+            "This OBO file uses local timestamps rather than UTC.\n\n"
+            "Enter the hours to add to OBO times to convert to UTC:\n"
+            "e.g. EDT (UTC\u22124) \u2192 enter +4,  BST (UTC+1) \u2192 enter \u22121"
+        )
+        lbl.setWordWrap(True)
+        layout.addWidget(lbl)
+
+        spin = QtWidgets.QDoubleSpinBox()
+        spin.setRange(-24, 24)
+        spin.setDecimals(1)
+        spin.setSingleStep(0.5)
+        spin.setValue(float(self.commissioningConfig["AverageSpeed"].get("obo_time_offset", "0")))
+        spin.setSuffix(" hours")
+        form = QtWidgets.QFormLayout()
+        form.addRow("OBO Time Offset:", spin)
+        layout.addLayout(form)
+
+        btn_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(dlg.accept)
+        btn_box.rejected.connect(dlg.reject)
+        layout.addWidget(btn_box)
+
+        if dlg.exec_() == QtWidgets.QDialog.Accepted:
+            return spin.value()
+        return 0.0
 
     def _startComparison(self, OBODataFilenames, vrm_groups):
         self._last_obo_file = OBODataFilenames[0] if OBODataFilenames else None
@@ -1038,7 +1112,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
 
     def export_vbox_cut_data(self):
-        saveFilename, check = QFileDialog.getSaveFileName(None, "Save Vbox Cut Data:", f"{self.line_plate.text()}_vbox_cut_data.csv", "CSV Files (*.csv);;All Files (*.*)")
+        # Derive a default filename from the VRMs in the results
+        try:
+            vrms = "_".join(dict.fromkeys(
+                str(row[7]) for row in self.linkValidationData.validationResultData
+            ))
+        except Exception:
+            vrms = "vbox"
+        saveFilename, check = QFileDialog.getSaveFileName(None, "Save Vbox Cut Data:", f"{vrms}_vbox_cut_data.csv", "CSV Files (*.csv);;All Files (*.*)")
         if not check: return
 
         with open(saveFilename, "w") as f:
@@ -1179,7 +1260,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_file_check.setEnabled(True)
         self.btn_wizard.setEnabled(True)
         if result['Result']:
-            if len(self.linkValidationData.validationResultData):
+            total = len(self.linkValidationData.validationResultData) if self.linkValidationData else 0
+
+            if total:
                 self.btn_save_kml.setEnabled(True)
                 self.btn_export_validation_data.setEnabled(True)
                 self.btn_export_vbox_cut.setEnabled(True)
@@ -1219,8 +1302,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     self._wizard.mark_complete()
                     self._wizard.show()
 
-                # Update status bar
-                total = len(self.linkValidationData.validationResultData)
+            # Update status bar regardless of passage count
+            import datetime as _dt
+            if total:
                 if self.chk_validation_enabled.isChecked():
                     passed = sum(1 for row in self.linkValidationData.validationResultData
                                  if self._row_passes(row))
@@ -1230,11 +1314,39 @@ class MainWindow(QtWidgets.QMainWindow):
                     self._sb_passages.setText(f"Passages: {total}")
                     self._sb_passed.setText("")
                     self._sb_failed.setText("")
-                    import datetime
-                    self._sb_time.setText(f"Last run: {datetime.datetime.now().strftime('%H:%M:%S')}")
+                    self._sb_time.setText(f"Last run: {_dt.datetime.now().strftime('%H:%M:%S')}")
+            else:
+                self._sb_passages.setText("Passages: 0")
+                self._sb_passed.setText("")
+                self._sb_failed.setText("")
+                self._sb_time.setText(f"Last run: {_dt.datetime.now().strftime('%H:%M:%S')}")
 
             if "DisplayMessage" in result:
                 self.showInfoMessagebox(result['Title'], result['Text'])
+
+            # Reduced format warning always comes first
+            if getattr(self.linkValidationData, 'secondary_data_missing', False):
+                QtWidgets.QMessageBox.warning(
+                    self, "Reduced OBO Format Detected",
+                    "The imported OBO file uses a reduced format that does not include:\n\n"
+                    "  • Secondary Entry / Exit Times\n"
+                    "  • Entry / Exit Time Differences\n"
+                    "  • Secondary Speed\n"
+                    "  • Primary / Secondary Speed Difference\n"
+                    "  • Camera ID\n\n"
+                    "These columns will be blank in the results table."
+                )
+
+            # Only warn about no passages if not a reduced format timezone issue
+            if total == 0 and not getattr(self.linkValidationData, 'secondary_data_missing', False):
+                QtWidgets.QMessageBox.information(
+                    self, "No Passages Found",
+                    "The comparison completed but no matching passages were found.\n\n"
+                    "Check that:\n"
+                    "  • The VRM or hash is entered correctly\n"
+                    "  • The OBO export covers the correct time window\n"
+                    "  • The GPS files cover the same time period as the OBO data"
+                )
         else:
             self.btn_save_kml.setEnabled(False)
             self.btn_export_validation_data.setEnabled(False)

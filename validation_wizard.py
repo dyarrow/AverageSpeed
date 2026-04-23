@@ -284,6 +284,7 @@ class Page_OBO(QWizardPage):
         super().__init__(parent)
         self.setTitle("Select OBO Data File(s)")
         self.setSubTitle("Select the OBO passage data files to compare against the GPS recordings.")
+        self._obo_time_offset = 0.0
 
         layout = QVBoxLayout()
         info = QLabel(
@@ -327,6 +328,63 @@ class Page_OBO(QWizardPage):
             if f not in existing:
                 self.file_list.addItem(f)
         self.completeChanged.emit()
+        # Detect MDOT reduced format and ask for timezone offset
+        self._check_obo_format(files)
+
+    def _check_obo_format(self, files):
+        try:
+            import openpyxl
+            from link_validation import MDOTInputData
+            for f in files:
+                if not f.lower().endswith((".xlsx", ".xls")):
+                    continue
+                wb     = openpyxl.load_workbook(f, read_only=True)
+                if "Matched" not in wb.sheetnames:
+                    continue
+                sheet  = wb["Matched"]
+                rows   = list(sheet.rows)
+                if not rows:
+                    continue
+                headers = [c.value for c in rows[0]]
+                if MDOTInputData.detect(headers):
+                    self._ask_obo_timezone()
+                    return
+        except Exception:
+            pass
+
+    def _ask_obo_timezone(self):
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle("OBO Timezone")
+        dlg.setFixedWidth(320)
+        layout = QtWidgets.QVBoxLayout(dlg)
+        layout.setSpacing(10)
+
+        lbl = QtWidgets.QLabel(
+            "This OBO file appears to use a <b>reduced format</b> with local timestamps.<br><br>"
+            "Enter the offset needed to convert OBO times to UTC:<br>"
+            "<small>(e.g. EDT is UTC−4, so enter <b>+4</b>; BST is UTC+1, enter <b>−1</b>)</small>"
+        )
+        lbl.setWordWrap(True)
+        lbl.setTextFormat(Qt.RichText)
+        layout.addWidget(lbl)
+
+        spin = QtWidgets.QDoubleSpinBox()
+        spin.setRange(-24, 24)
+        spin.setDecimals(1)
+        spin.setSingleStep(0.5)
+        spin.setValue(self._obo_time_offset)
+        spin.setSuffix(" hours")
+        form = QtWidgets.QFormLayout()
+        form.addRow("OBO Time Offset:", spin)
+        layout.addLayout(form)
+
+        btn_box = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(dlg.accept)
+        btn_box.rejected.connect(dlg.reject)
+        layout.addWidget(btn_box)
+
+        if dlg.exec_() == QtWidgets.QDialog.Accepted:
+            self._obo_time_offset = spin.value()
 
     def remove_selected(self):
         for item in self.file_list.selectedItems():
@@ -335,6 +393,9 @@ class Page_OBO(QWizardPage):
 
     def get_files(self):
         return [self.file_list.item(i).text() for i in range(self.file_list.count())]
+
+    def get_obo_time_offset(self):
+        return self._obo_time_offset
 
     def isComplete(self):
         return self.file_list.count() > 0
@@ -630,6 +691,9 @@ class ValidationWizard(QWizard):
 
     def get_obo_files(self):
         return self.page(self.OBO_PAGE).get_files()
+
+    def get_obo_time_offset(self):
+        return self.page(self.OBO_PAGE).get_obo_time_offset()
 
 
 

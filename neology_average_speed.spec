@@ -19,8 +19,6 @@ a = Analysis(
     pathex=['.'],
     binaries=[],
     datas=[
-        # UI file - loaded at runtime via uic.loadUi()
-        ('ui/neology_average_speed.ui', 'ui'),
         # Default JSON config - loaded from resourcesPath (cwd) by the app
         # This is placed in the _MEIPASS root so it is available next to the exe
         # at runtime via the installer (see InnoSetup script).

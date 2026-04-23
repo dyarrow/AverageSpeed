@@ -78,6 +78,9 @@ Source: "neology_average_speed.json"; DestDir: "{app}"; Flags: ignoreversion onl
 ; --- Application icon (for Add/Remove Programs) ---
 Source: "neology2.ico"; DestDir: "{app}"; Flags: ignoreversion
 
+; --- Help file ---
+Source: "help.html"; DestDir: "{app}"; Flags: ignoreversion
+
 [Icons]
 ; Start Menu shortcut
 Name: "{group}\{#AppName}";        FileName: "{app}\{#AppExeName}"; IconFilename: "{app}\neology2.ico"

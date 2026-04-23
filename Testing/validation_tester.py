@@ -78,6 +78,20 @@ TESTS = [
             },
         ],
         "expected": os.path.join(TEST_DATA, "wsdot_day5_ANZ6427_test_results.csv"),
+        "obo_time_offset": 0,
+    },
+    {
+        "name": "9TEX MDOT — reduced format EDT",
+        "obo":  os.path.join(TEST_DATA, "MDOT_TTI_Data_-_17-04-2026_2_original.xlsx"),
+        "vrm_groups": [
+            {
+                "plate":      "9TEX",
+                "plate_hash": "",
+                "vbo_files":  [os.path.join(TEST_DATA, "VBOX0002.vbo")],
+            },
+        ],
+        "expected": os.path.join(TEST_DATA, "MDOT_9TEX_test_results.csv"),
+        "obo_time_offset": 4,  # EDT → UTC
     },
     # Multi-VRM example:
     {
@@ -111,6 +125,7 @@ TESTS = [
                                                                  os.path.join(TEST_DATA, "wsdot_day6_multivrm_BMW(9).vbo")]},
          ],
          "expected": os.path.join(TEST_DATA, "wsdot_day6_multivrm_test_results.csv"),
+        "obo_time_offset": 0,
     },
 ]
 
@@ -191,7 +206,9 @@ def run_test(test, verbose=False, update=False):
         val_data                     = linkValidationData()
         val_data.gpsFilenames        = vbo_files
         val_data.ercuFilenames       = obo_files
-        val_data.commissioningConfig = CONFIG
+        cfg = dict(CONFIG["AverageSpeed"])
+        cfg["obo_time_offset"] = str(test.get("obo_time_offset", 0))
+        val_data.commissioningConfig = {"AverageSpeed": cfg}
 
         ui         = _FakeUI()
         ui.pbTotal = len(vbo_files) + len(obo_files) + 1
